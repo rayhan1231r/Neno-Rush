@@ -1,0 +1,6 @@
+{
+  "name": "NEON RUSH - 3D Endless Runner",
+  "description": "High-octane 3D cyberpunk endless runner with real-time lane switching, procedural obstacles, character and skateboard customization, global leaderboards, and secure Google Play Billing store.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

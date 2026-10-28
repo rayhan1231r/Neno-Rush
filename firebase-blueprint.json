@@ -1,0 +1,277 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public profile details of a Neon Rush player",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Unique Firebase Authentication UID"
+        },
+        "username": {
+          "type": "string",
+          "description": "Rider tag handle",
+          "maxLength": 30
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address if authenticated",
+          "maxLength": 100
+        },
+        "isGuest": {
+          "type": "boolean",
+          "description": "Whether the user is playing in guest mode"
+        },
+        "avatarSeed": {
+          "type": "string",
+          "description": "Avatar character graphic key",
+          "maxLength": 50
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Account creation timestamp"
+        },
+        "lastSyncedAt": {
+          "type": "number",
+          "description": "Last cloud synchronization timestamp"
+        }
+      },
+      "required": ["userId", "username"]
+    },
+    "PlayerInventory": {
+      "title": "PlayerInventory",
+      "description": "Inventory of unlocked characters and skateboards",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner user UID"
+        },
+        "coins": {
+          "type": "number",
+          "description": "In-game free gold coins balance"
+        },
+        "gems": {
+          "type": "number",
+          "description": "Premium gems balance"
+        },
+        "selectedCharacterId": {
+          "type": "string",
+          "description": "Equipped character ID"
+        },
+        "selectedSkateboardId": {
+          "type": "string",
+          "description": "Equipped skateboard ID"
+        },
+        "unlockedCharacterIds": {
+          "type": "array",
+          "description": "List of unlocked character IDs"
+        },
+        "unlockedSkateboardIds": {
+          "type": "array",
+          "description": "List of unlocked skateboard IDs"
+        }
+      },
+      "required": ["userId", "selectedCharacterId", "selectedSkateboardId"]
+    },
+    "PlayerStats": {
+      "title": "PlayerStats",
+      "description": "Career statistics and best records",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner user UID"
+        },
+        "highScore": {
+          "type": "number",
+          "description": "Highest single-run score"
+        },
+        "highestDistance": {
+          "type": "number",
+          "description": "Longest distance covered in meters"
+        },
+        "lifetimeCoins": {
+          "type": "number",
+          "description": "Total coins collected across all runs"
+        },
+        "runsPlayed": {
+          "type": "number",
+          "description": "Number of runs played"
+        },
+        "lastPlayedAt": {
+          "type": "number",
+          "description": "Last run timestamp"
+        }
+      },
+      "required": ["userId", "highScore", "highestDistance"]
+    },
+    "PlayerMissions": {
+      "title": "PlayerMissions",
+      "description": "Player mission progression and daily reward streak",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner user UID"
+        },
+        "loginStreak": {
+          "type": "number",
+          "description": "Consecutive days logged in"
+        },
+        "lastLoginDate": {
+          "type": "string",
+          "description": "YYYY-MM-DD string of last login"
+        },
+        "claimedDailyRewards": {
+          "type": "array",
+          "description": "Array of day numbers claimed in current cycle"
+        },
+        "completedMissionIds": {
+          "type": "array",
+          "description": "Array of completed mission IDs"
+        },
+        "claimedMissionIds": {
+          "type": "array",
+          "description": "Array of claimed mission IDs"
+        }
+      },
+      "required": ["userId", "loginStreak"]
+    },
+    "LeaderboardScore": {
+      "title": "LeaderboardScore",
+      "description": "Anti-cheat validated global leaderboard entry",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Player UID"
+        },
+        "username": {
+          "type": "string",
+          "description": "Player display name"
+        },
+        "characterId": {
+          "type": "string",
+          "description": "Character used"
+        },
+        "score": {
+          "type": "number",
+          "description": "High score verified by anti-cheat"
+        },
+        "distance": {
+          "type": "number",
+          "description": "Distance in meters"
+        },
+        "coinsCollected": {
+          "type": "number",
+          "description": "Coins collected in run"
+        },
+        "timestamp": {
+          "type": "number",
+          "description": "Score submission timestamp"
+        }
+      },
+      "required": ["userId", "username", "score"]
+    },
+    "PurchaseTransaction": {
+      "title": "PurchaseTransaction",
+      "description": "Immutable ledger record of verified Google Play purchase",
+      "type": "object",
+      "properties": {
+        "transactionId": {
+          "type": "string",
+          "description": "Unique transaction ID"
+        },
+        "orderId": {
+          "type": "string",
+          "description": "Google Play Order ID or Sandbox ID"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Purchaser UID"
+        },
+        "productId": {
+          "type": "string",
+          "description": "In-app product SKU"
+        },
+        "productName": {
+          "type": "string",
+          "description": "Pack name"
+        },
+        "coinsAwarded": {
+          "type": "number",
+          "description": "Coins credited"
+        },
+        "gemsAwarded": {
+          "type": "number",
+          "description": "Gems credited"
+        },
+        "pricePaid": {
+          "type": "number",
+          "description": "Price paid in USD"
+        },
+        "currency": {
+          "type": "string",
+          "description": "Currency code"
+        },
+        "provider": {
+          "type": "string",
+          "description": "Payment provider (google_play or sandbox_simulated)"
+        },
+        "status": {
+          "type": "string",
+          "description": "Transaction status (verified, refunded, revoked)"
+        },
+        "purchaseToken": {
+          "type": "string",
+          "description": "Unique single-use purchase token"
+        },
+        "timestamp": {
+          "type": "number",
+          "description": "Verification timestamp"
+        }
+      },
+      "required": ["transactionId", "orderId", "userId", "productId", "purchaseToken", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "UserProfile"
+      },
+      "description": "Player profile document"
+    },
+    "/users/{userId}/gameData/inventory": {
+      "schema": {
+        "$ref": "PlayerInventory"
+      },
+      "description": "Player unlocked characters, skateboards and balances"
+    },
+    "/users/{userId}/gameData/stats": {
+      "schema": {
+        "$ref": "PlayerStats"
+      },
+      "description": "Player career run statistics and records"
+    },
+    "/users/{userId}/gameData/missions": {
+      "schema": {
+        "$ref": "PlayerMissions"
+      },
+      "description": "Mission progress and 7-day daily login bonus status"
+    },
+    "/leaderboard/{period}/scores/{scoreId}": {
+      "schema": {
+        "$ref": "LeaderboardScore"
+      },
+      "description": "Global leaderboard rankings for daily, weekly, and all-time periods"
+    },
+    "/transactions/{transactionId}": {
+      "schema": {
+        "$ref": "PurchaseTransaction"
+      },
+      "description": "Verified purchase transaction audit ledger"
+    }
+  }
+}
