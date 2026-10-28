@@ -1,9 +1,12 @@
 /**
  * NEON RUSH - Core Game Types and Interfaces
+ * Matches master reference design with 18 characters (A-Z), 6 skateboards,
+ * 6 in-game environments, and 6 power-ups.
  */
 
-export type CharacterRarity = 'starter' | 'street' | 'neon' | 'robot' | 'ninja' | 'space' | 'legendary' | 'special';
-export type SkateboardRarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
+export type CharacterRarity = 'Common' | 'Rare' | 'Epic' | 'Legendary';
+export type SkateboardRarity = 'Common' | 'Rare' | 'Epic' | 'Legendary';
+export type EnvironmentType = 'city' | 'beach' | 'snow' | 'desert' | 'night_city' | 'jungle';
 
 export interface CharacterItem {
   id: string;
@@ -16,24 +19,26 @@ export interface CharacterItem {
   perkDescription: string;
   multiplierBonus: number;
   unlocked: boolean;
+  avatarIcon: string;
   colors: {
     primary: string;
     secondary: string;
     accent: string;
     glow: string;
   };
-  styleType: 'runner' | 'cyber' | 'ninja' | 'robot' | 'space' | 'chrono' | 'street' | 'empress';
+  styleType: 'runner' | 'cyber' | 'ninja' | 'robot' | 'space' | 'dino' | 'ice' | 'alien' | 'royal' | 'tech';
 }
 
 export interface SkateboardItem {
   id: string;
   name: string;
   rarity: SkateboardRarity;
-  costType: 'coins' | 'gems';
+  costType: 'free' | 'coins' | 'gems';
   price: number;
   description: string;
   shieldDurationSec: number;
   jumpMultiplier: number;
+  speedBonusPct: number;
   unlocked: boolean;
   colors: {
     deck: string;
@@ -43,19 +48,29 @@ export interface SkateboardItem {
   };
 }
 
+export interface EnvironmentInfo {
+  id: EnvironmentType;
+  name: string;
+  subtitle: string;
+  skyColor: string;
+  fogColor: string;
+  roadColor: string;
+  barrierColor: string;
+  themeAccent: string;
+  icon: string;
+}
+
 export interface CoinPack {
   id: string;
   sku: string;
   name: string;
   coinAmount: number;
+  bonusAmount: number;
   gemAmount: number;
-  bonusPercentage: number;
   priceUsd: number;
   formattedPrice: string;
   featured?: boolean;
   bestValue?: boolean;
-  popular?: boolean;
-  icon: string;
   badge?: string;
 }
 
@@ -71,13 +86,12 @@ export interface PurchaseTransaction {
   provider: 'google_play' | 'sandbox_simulated';
   timestamp: number;
   status: 'verified' | 'pending' | 'refunded' | 'revoked';
-  signatureToken?: string;
   purchaseToken: string;
 }
 
 export interface Mission {
   id: string;
-  type: 'daily' | 'weekly' | 'achievement';
+  type: 'daily' | 'achievement';
   title: string;
   description: string;
   currentValue: number;
@@ -86,7 +100,7 @@ export interface Mission {
   rewardAmount: number;
   completed: boolean;
   claimed: boolean;
-  metric: 'distance' | 'coins' | 'jumps' | 'slides' | 'powerups' | 'score';
+  metric: 'distance' | 'coins' | 'jumps' | 'slides' | 'powerups' | 'score' | 'runs';
 }
 
 export interface DailyReward {
@@ -101,6 +115,7 @@ export interface LeaderboardEntry {
   userId: string;
   username: string;
   characterId: string;
+  characterName?: string;
   score: number;
   distance: number;
   coinsCollected: number;
@@ -111,15 +126,21 @@ export interface LeaderboardEntry {
 export interface PlayerProfile {
   userId: string;
   username: string;
+  tagId?: string; // e.g. "NR123456"
   avatarSeed: string;
+  level?: number;
+  xp?: number;
+  xpToNextLevel?: number;
   coins: number;
   gems: number;
   highScore: number;
   highestDistance: number;
   lifetimeCoins: number;
   runsPlayed: number;
+  missionsCompletedCount?: number;
   selectedCharacterId: string;
   selectedSkateboardId: string;
+  selectedEnvironment?: EnvironmentType;
   unlockedCharacterIds: string[];
   unlockedSkateboardIds: string[];
   lastLoginDate: string;
@@ -133,12 +154,15 @@ export interface PlayerProfile {
   lastSyncedAt: number;
 }
 
-export type PowerUpType = 'magnet' | 'multiplier2x' | 'skateboard' | 'neondash';
+export type PowerUpType = 'magnet' | 'shield' | 'multiplier2x' | 'superjump' | 'coinboost' | 'skateboard';
 
 export interface ActivePowerUp {
   type: PowerUpType;
+  name: string;
   durationTotal: number;
   durationRemaining: number;
+  icon: string;
+  color: string;
 }
 
 export interface RunStats {

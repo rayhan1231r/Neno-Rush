@@ -1,8 +1,9 @@
 /**
  * NEON RUSH - Pure Game Rules, Math & Anti-Cheat Logic
+ * Matches master reference design specifications.
  */
 
-import { CoinPack, Mission, PlayerProfile, PurchaseTransaction } from '../types/game';
+import { CoinPack, EnvironmentInfo, EnvironmentType, Mission, PurchaseTransaction } from '../types/game';
 
 export const LANE_WIDTH = 2.6;
 export const TOTAL_LANES = 3; // -1 (Left), 0 (Center), 1 (Right)
@@ -12,91 +13,146 @@ export const LANE_COORDINATES = {
   [1]: LANE_WIDTH,
 } as const;
 
+export const ENVIRONMENTS: EnvironmentInfo[] = [
+  {
+    id: 'city',
+    name: 'City',
+    subtitle: 'Neon Sunset Metropolis',
+    skyColor: '#0c0f24',
+    fogColor: '#0a0d20',
+    roadColor: '#12172a',
+    barrierColor: '#06b6d4',
+    themeAccent: '#38bdf8',
+    icon: '🏙️',
+  },
+  {
+    id: 'beach',
+    name: 'Beach',
+    subtitle: 'Tropical Coastline Highway',
+    skyColor: '#0f2b38',
+    fogColor: '#0b2430',
+    roadColor: '#d97706',
+    barrierColor: '#14b8a6',
+    themeAccent: '#06b6d4',
+    icon: '🏖️',
+  },
+  {
+    id: 'snow',
+    name: 'Snow',
+    subtitle: 'Glacial Mountain Pass',
+    skyColor: '#0a1628',
+    fogColor: '#081220',
+    roadColor: '#e0f2fe',
+    barrierColor: '#38bdf8',
+    themeAccent: '#7dd3fc',
+    icon: '❄️',
+  },
+  {
+    id: 'desert',
+    name: 'Desert',
+    subtitle: 'Canyon Dune Canyon',
+    skyColor: '#27170a',
+    fogColor: '#201208',
+    roadColor: '#78350f',
+    barrierColor: '#f59e0b',
+    themeAccent: '#fbbf24',
+    icon: '🏜️',
+  },
+  {
+    id: 'night_city',
+    name: 'Night City',
+    subtitle: 'Cyberpunk Neon Midnight',
+    skyColor: '#090514',
+    fogColor: '#080412',
+    roadColor: '#0f0a1c',
+    barrierColor: '#a855f7',
+    themeAccent: '#ec4899',
+    icon: '🌃',
+  },
+  {
+    id: 'jungle',
+    name: 'Jungle',
+    subtitle: 'Ancient Canopy Ruins',
+    skyColor: '#051b14',
+    fogColor: '#041610',
+    roadColor: '#064e3b',
+    barrierColor: '#10b981',
+    themeAccent: '#34d399',
+    icon: '🌴',
+  },
+];
+
 export const DEFAULT_COIN_PACKS: CoinPack[] = [
   {
     id: 'pack_starter',
     sku: 'neon_rush_coins_starter_1000',
     name: 'Starter Pack',
     coinAmount: 1000,
+    bonusAmount: 100,
     gemAmount: 10,
-    bonusPercentage: 0,
     priceUsd: 0.99,
     formattedPrice: '$0.99',
-    icon: '⚡',
   },
   {
     id: 'pack_runner',
     sku: 'neon_rush_coins_runner_5000',
     name: 'Runner Pack',
     coinAmount: 5000,
+    bonusAmount: 500,
     gemAmount: 60,
-    bonusPercentage: 10,
     priceUsd: 4.99,
     formattedPrice: '$4.99',
-    icon: '🔥',
-    popular: true,
   },
   {
     id: 'pack_pro',
     sku: 'neon_rush_coins_pro_12000',
     name: 'Pro Pack',
     coinAmount: 12000,
+    bonusAmount: 1500,
     gemAmount: 150,
-    bonusPercentage: 20,
     priceUsd: 9.99,
     formattedPrice: '$9.99',
     featured: true,
-    badge: 'POPULAR',
-    icon: '💎',
+    bestValue: true,
+    badge: 'Best Value',
   },
   {
     id: 'pack_champion',
     sku: 'neon_rush_coins_champion_30000',
     name: 'Champion Pack',
     coinAmount: 30000,
+    bonusAmount: 5000,
     gemAmount: 400,
-    bonusPercentage: 35,
     priceUsd: 19.99,
     formattedPrice: '$19.99',
-    icon: '🏆',
   },
   {
     id: 'pack_legend',
     sku: 'neon_rush_coins_legend_75000',
     name: 'Legend Pack',
     coinAmount: 75000,
+    bonusAmount: 12500,
     gemAmount: 1100,
-    bonusPercentage: 50,
     priceUsd: 49.99,
     formattedPrice: '$49.99',
-    icon: '👑',
   },
   {
     id: 'pack_ultimate',
     sku: 'neon_rush_coins_ultimate_150000',
     name: 'Ultimate Pack',
     coinAmount: 150000,
+    bonusAmount: 25000,
     gemAmount: 2500,
-    bonusPercentage: 80,
     priceUsd: 99.99,
     formattedPrice: '$99.99',
-    bestValue: true,
-    badge: 'BEST VALUE',
-    icon: '🚀',
   },
 ];
 
-/**
- * Calculates lane target X coordinate from lane index (-1, 0, 1)
- */
 export function getLaneX(laneIndex: number): number {
   const clamped = Math.max(-1, Math.min(1, Math.round(laneIndex)));
   return clamped * LANE_WIDTH;
 }
 
-/**
- * Clamps lane switch index
- */
 export function clampLane(currentLane: number, delta: number): -1 | 0 | 1 {
   const next = currentLane + delta;
   if (next < -1) return -1;
@@ -104,9 +160,6 @@ export function clampLane(currentLane: number, delta: number): -1 | 0 | 1 {
   return next as -1 | 0 | 1;
 }
 
-/**
- * Calculate instantaneous and continuous run score
- */
 export function calculateRunScore(
   distanceMeters: number,
   coinsCollected: number,
@@ -120,9 +173,6 @@ export function calculateRunScore(
   return Math.max(0, distancePoints + coinPoints);
 }
 
-/**
- * Safe currency crediting with integer guarantee and no negative balances
- */
 export function applyCurrencyUpdate(
   currentCoins: number,
   currentGems: number,
@@ -150,9 +200,6 @@ export function applyCurrencyUpdate(
   };
 }
 
-/**
- * Validates purchase token idempotency and server catalog match
- */
 export function verifyPurchaseRequest(
   productId: string,
   purchaseToken: string,
@@ -179,10 +226,6 @@ export function verifyPurchaseRequest(
   return { valid: true, pack };
 }
 
-/**
- * Anti-cheat validation for submitted run score
- * Checks that the score does not exceed physical game limits for given distance & coins
- */
 export function validateRunIntegrity(
   score: number,
   distance: number,
@@ -193,29 +236,23 @@ export function validateRunIntegrity(
     return { isLegitimate: false, reason: 'Negative metrics provided' };
   }
 
-  // Speed check: maximum theoretical speed is ~40 m/s in hyper boost
   const avgSpeed = distance / elapsedSeconds;
-  if (avgSpeed > 50) {
+  if (avgSpeed > 55) {
     return { isLegitimate: false, reason: 'Speed exceeds maximum physical limit' };
   }
 
-  // Coin density check: maximum 3 coins per meter
-  if (coinsCollected > Math.max(10, distance * 2.5)) {
+  if (coinsCollected > Math.max(10, distance * 3.5)) {
     return { isLegitimate: false, reason: 'Coin collection density is unfeasible' };
   }
 
-  // Score upper bound check with max 10x multiplier
   const maxPossibleScore = calculateRunScore(distance, coinsCollected, 10, 2, true);
-  if (score > maxPossibleScore * 1.25) {
+  if (score > maxPossibleScore * 1.5) {
     return { isLegitimate: false, reason: 'Score exceeds theoretical bounds for run length' };
   }
 
   return { isLegitimate: true };
 }
 
-/**
- * Progresses missions based on run stats
- */
 export function updateMissionsProgress(
   missions: Mission[],
   stats: {
@@ -225,6 +262,7 @@ export function updateMissionsProgress(
     slides: number;
     powerups: number;
     score: number;
+    runs?: number;
   }
 ): { updatedMissions: Mission[]; newCompletedCount: number } {
   let newCompletedCount = 0;
@@ -251,6 +289,9 @@ export function updateMissionsProgress(
         break;
       case 'score':
         delta = stats.score;
+        break;
+      case 'runs':
+        delta = stats.runs || 1;
         break;
     }
 

@@ -18,11 +18,13 @@ import {
   PlayerProfile,
   RunStats,
   SkateboardItem,
+  EnvironmentType,
 } from './types/game';
 
 import { FirebaseService, testFirestoreConnection } from './services/firebase';
 
 // HUD & Modals
+import { LoadingScreen } from './components/LoadingScreen';
 import { TitleScreen } from './components/TitleScreen';
 import { GameplayHUD } from './components/GameplayHUD';
 import { PauseModal } from './components/PauseModal';
@@ -39,6 +41,15 @@ import { AdminModal } from './components/AdminModal';
 export default function App() {
   const canvasMountRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<NeonRushEngine | null>(null);
+
+  // Splash Loading Screen
+  const [isLoadingScreen, setIsLoadingScreen] = useState<boolean>(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('autostart') !== '1';
+  });
+
+  // Selected Environment (City, Beach, Snow, Desert, Night City, Jungle)
+  const [selectedEnvironment, setSelectedEnvironment] = useState<EnvironmentType>('city');
 
   // Core Game State
   const [gameState, setGameState] = useState<'ready' | 'running' | 'paused' | 'gameover'>('ready');
@@ -392,6 +403,13 @@ export default function App() {
     }
   };
 
+  const handleSelectEnvironment = (env: EnvironmentType) => {
+    setSelectedEnvironment(env);
+    if (engineRef.current) {
+      engineRef.current.setEnvironment(env);
+    }
+  };
+
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-slate-950 text-white select-none">
       {/* Isolated Three.js WebGL Canvas Mount */}
@@ -401,11 +419,18 @@ export default function App() {
         className="absolute inset-0 w-full h-full z-0 cursor-grab active:cursor-grabbing"
       />
 
+      {/* Screen 0: 3D Splash & Loading Screen */}
+      {isLoadingScreen && (
+        <LoadingScreen onComplete={() => setIsLoadingScreen(false)} />
+      )}
+
       {/* Screen 1: Title Screen / Main Menu */}
-      {gameState === 'ready' && activeModal === 'none' && (
+      {!isLoadingScreen && gameState === 'ready' && activeModal === 'none' && (
         <TitleScreen
           profile={profile}
           isMuted={isMuted}
+          selectedEnvironment={selectedEnvironment}
+          onSelectEnvironment={handleSelectEnvironment}
           onStartGame={handleStartGame}
           onToggleMute={handleToggleMute}
           onOpenCharacters={() => setActiveModal('characters')}

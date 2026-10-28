@@ -24,15 +24,15 @@ app.use(express.json());
 const processedPurchaseTokens = new Set<string>();
 const transactionLedger: PurchaseTransaction[] = [];
 
-// Seeded global leaderboard entries for rich community competition
+// Seeded global leaderboard entries matching master reference sheet
 const allTimeLeaderboard: LeaderboardEntry[] = [
-  { rank: 1, userId: 'usr_top1', username: 'NeonPhantom', characterId: 'char_legendary', score: 184500, distance: 8200, coinsCollected: 1420, timestamp: Date.now() - 3600000 },
-  { rank: 2, userId: 'usr_top2', username: 'VortexSurfer', characterId: 'char_ninja', score: 142200, distance: 6400, coinsCollected: 1100, timestamp: Date.now() - 7200000 },
-  { rank: 3, userId: 'usr_top3', username: 'CyberGlitch', characterId: 'char_neon', score: 119800, distance: 5350, coinsCollected: 940, timestamp: Date.now() - 12000000 },
-  { rank: 4, userId: 'usr_top4', username: 'AstroKage', characterId: 'char_space', score: 98400, distance: 4400, coinsCollected: 810, timestamp: Date.now() - 18000000 },
-  { rank: 5, userId: 'usr_top5', username: 'TurboDrifter', characterId: 'char_street', score: 76500, distance: 3600, coinsCollected: 620, timestamp: Date.now() - 24000000 },
-  { rank: 6, userId: 'usr_top6', username: 'ApexRider', characterId: 'char_robot', score: 62100, distance: 3100, coinsCollected: 490, timestamp: Date.now() - 30000000 },
-  { rank: 7, userId: 'usr_top7', username: 'ZeroGravity', characterId: 'char_starter', score: 45000, distance: 2400, coinsCollected: 380, timestamp: Date.now() - 36000000 },
+  { rank: 1, userId: 'usr_nova', username: 'Nova', characterId: 'char_nova', score: 1126500, distance: 48200, coinsCollected: 12420, timestamp: Date.now() - 3600000 },
+  { rank: 2, userId: 'usr_aiden', username: 'Aiden', characterId: 'char_aiden', score: 1124500, distance: 47900, coinsCollected: 11900, timestamp: Date.now() - 7200000 },
+  { rank: 3, userId: 'usr_luna', username: 'Luna', characterId: 'char_luna', score: 980210, distance: 41200, coinsCollected: 9840, timestamp: Date.now() - 12000000 },
+  { rank: 4, userId: 'usr_jax', username: 'Jax', characterId: 'char_jax', score: 842760, distance: 35400, coinsCollected: 8210, timestamp: Date.now() - 18000000 },
+  { rank: 5, userId: 'usr_kira', username: 'Kira', characterId: 'char_kira', score: 765430, distance: 31200, coinsCollected: 7420, timestamp: Date.now() - 24000000 },
+  { rank: 6, userId: 'usr_echo', username: 'Echo', characterId: 'char_echo', score: 487320, distance: 22100, coinsCollected: 5120, timestamp: Date.now() - 30000000 },
+  { rank: 7, userId: 'usr_dino', username: 'Dino', characterId: 'char_dino', score: 421560, distance: 19800, coinsCollected: 4320, timestamp: Date.now() - 36000000 },
 ];
 
 let serverCoinCatalog = [...DEFAULT_COIN_PACKS];

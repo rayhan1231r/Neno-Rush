@@ -1,18 +1,18 @@
 /**
  * NEON RUSH - 3D Endless Runner Game Engine
- * Implements 60fps Three.js simulation, software WebGL pacing via fenceSync (afterDraw),
- * procedural endless road recycling, 3-lane physics, hitstop, pooled particles,
- * and dynamic cyberpunk cityscape.
+ * Implements 60fps Three.js simulation, 6 environments (City, Beach, Snow, Desert, Night City, Jungle),
+ * 6 power-ups (Magnet, Shield, 2x Score, Super Jump, Coin Boost, Skateboard Boost),
+ * character on skateboard animation, procedural road generation, hitstop, and pooled particles.
  */
 
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { LANE_WIDTH, clampLane, getLaneX, calculateRunScore } from './rules';
 import { CharacterMeshHandle, createCharacterMesh, createSkateboardMesh } from './models';
+import { buildEnvironmentPreset, EnvironmentPreset } from './environments';
 import { sound } from './audio';
-import { ActivePowerUp, PowerUpType, RunStats } from '../types/game';
+import { ActivePowerUp, EnvironmentType, PowerUpType, RunStats } from '../types/game';
 
-// Pre-allocated scratch math helpers outside render loop
 const _vec3 = new THREE.Vector3();
 const _playerBox = new THREE.Box3();
 const _obstacleBox = new THREE.Box3();
@@ -65,6 +65,7 @@ export interface TrackChunk {
   obstacles: ObstacleInstance[];
   coins: CoinInstance[];
   powerUps: PowerUpItemInstance[];
+  landmarks: THREE.Object3D[];
 }
 
 export class NeonRushEngine {
@@ -96,12 +97,11 @@ export class NeonRushEngine {
   private distanceRun: number = 0;
   private coinsCollected: number = 0;
   private currentScore: number = 0;
-  private baseSpeed: number = 24.0; // m/s
+  private baseSpeed: number = 24.0;
   private currentSpeed: number = 24.0;
   private speedMultiplier: number = 1.0;
   private hitstopTimer: number = 0;
   private cameraTrauma: number = 0;
-  private baseScoreMultiplier: number = 1.0;
   private characterBonusMultiplier: number = 0;
 
   // Stats accumulator
@@ -114,14 +114,20 @@ export class NeonRushEngine {
 
   // Power-ups
   private activePowerUps: Map<PowerUpType, ActivePowerUp> = new Map();
-  private hasSkateboardShield: boolean = false;
-  private skateboardMesh: THREE.Group | null = null;
+  private hasShield: boolean = false;
+  private onSkateboard: boolean = false;
 
-  // Character
+  // Character & Skateboard
   private characterHandle!: CharacterMeshHandle;
   private playerGroup!: THREE.Group;
   private selectedCharacterId: string;
   private selectedSkateboardId: string;
+  private currentEnvironment: EnvironmentType;
+  private envPreset!: EnvironmentPreset;
+
+  // Lighting Handles
+  private hemiLight!: THREE.HemisphereLight;
+  private keyLight!: THREE.DirectionalLight;
 
   // World & Track
   private chunks: TrackChunk[] = [];
@@ -129,16 +135,12 @@ export class NeonRushEngine {
   private readonly TOTAL_CHUNKS = 6;
   private nextChunkZ: number = 0;
 
-  // City Scenery
-  private sceneryGroup!: THREE.Group;
-
-  // Reusable Shared Materials
-  private roadMaterial!: THREE.MeshStandardMaterial;
+  // Shared Coin Geometry & Material
   private coinGeometry!: THREE.CylinderGeometry;
   private coinMaterial!: THREE.MeshStandardMaterial;
 
   // Pooled Particle System
-  private particleCount = 120;
+  private particleCount = 140;
   private particleGeo!: THREE.BufferGeometry;
   private particleMat!: THREE.PointsMaterial;
   private particlePoints!: THREE.Points;
@@ -146,7 +148,7 @@ export class NeonRushEngine {
   private particleVelocities!: Float32Array;
   private particleLifetimes!: Float32Array;
 
-  // Input state
+  // Touch Inputs
   private touchStartX: number = 0;
   private touchStartY: number = 0;
   private touchStartTime: number = 0;
@@ -154,16 +156,20 @@ export class NeonRushEngine {
   constructor(
     container: HTMLElement,
     callbacks: GameEngineCallbacks,
-    characterId: string = 'char_starter',
+    characterId: string = 'char_aiden',
     skateboardId: string = 'board_classic',
-    charBonus: number = 0
+    charBonus: number = 0,
+    environment: EnvironmentType = 'city'
   ) {
     this.container = container;
     this.callbacks = callbacks;
     this.selectedCharacterId = characterId;
     this.selectedSkateboardId = skateboardId;
     this.characterBonusMultiplier = charBonus;
+    this.currentEnvironment = environment;
     this.clock = new THREE.Clock();
+
+    this.envPreset = buildEnvironmentPreset(this.currentEnvironment);
 
     this.initEngine();
     this.initWorld();
@@ -175,7 +181,6 @@ export class NeonRushEngine {
   }
 
   private initEngine() {
-    // Software WebGL Detection
     this.isSoftwareGl = (() => {
       try {
         const testCanvas = document.createElement('canvas');
@@ -210,52 +215,70 @@ export class NeonRushEngine {
     this.container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x050814); // Deep cyberpunk navy
-    this.scene.fog = new THREE.FogExp2(0x050814, 0.009);
+    this.applyEnvironmentTheme(this.envPreset);
 
     this.camera = new THREE.PerspectiveCamera(65, width / height, 0.1, 400);
     this.camera.position.set(0, 3.8, -5.5);
     this.camera.lookAt(0, 1.6, 6.0);
 
-    // Studio Environment Reflections
     try {
       const pmrem = new THREE.PMREMGenerator(this.renderer);
       this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
       pmrem.dispose();
     } catch {
-      // Fallback
+      // Ignore
     }
 
-    // Warm Key Light + Cool Hemisphere Lighting
-    const hemiLight = new THREE.HemisphereLight(0x38bdf8, 0x1e1b4b, 0.9);
-    this.scene.add(hemiLight);
+    // Lights
+    this.hemiLight = new THREE.HemisphereLight(this.envPreset.hemiSkyColor, this.envPreset.hemiGroundColor, 0.95);
+    this.scene.add(this.hemiLight);
 
-    const keyLight = new THREE.DirectionalLight(0xfff1e6, 1.8);
-    keyLight.position.set(15, 25, 10);
+    this.keyLight = new THREE.DirectionalLight(this.envPreset.keyLightColor, 1.8);
+    this.keyLight.position.set(15, 25, 10);
     if (!this.isSoftwareGl) {
-      keyLight.castShadow = true;
-      keyLight.shadow.mapSize.width = 1024;
-      keyLight.shadow.mapSize.height = 1024;
-      keyLight.shadow.bias = -0.0005;
-      keyLight.shadow.camera.near = 1;
-      keyLight.shadow.camera.far = 70;
-      keyLight.shadow.camera.left = -15;
-      keyLight.shadow.camera.right = 15;
-      keyLight.shadow.camera.top = 25;
-      keyLight.shadow.camera.bottom = -10;
+      this.keyLight.castShadow = true;
+      this.keyLight.shadow.mapSize.width = 1024;
+      this.keyLight.shadow.mapSize.height = 1024;
+      this.keyLight.shadow.bias = -0.0005;
+      this.keyLight.shadow.camera.near = 1;
+      this.keyLight.shadow.camera.far = 70;
+      this.keyLight.shadow.camera.left = -15;
+      this.keyLight.shadow.camera.right = 15;
+      this.keyLight.shadow.camera.top = 25;
+      this.keyLight.shadow.camera.bottom = -10;
     }
-    this.scene.add(keyLight);
-
-    // Neon Accent Lights
-    const cyanLight = new THREE.PointLight(0x06b6d4, 2.5, 35);
-    cyanLight.position.set(-6, 4, 15);
-    this.scene.add(cyanLight);
-
-    const magentaLight = new THREE.PointLight(0xf43f5e, 2.5, 35);
-    magentaLight.position.set(6, 4, 25);
-    this.scene.add(magentaLight);
+    this.scene.add(this.keyLight);
 
     window.addEventListener('resize', this.onResize);
+  }
+
+  private applyEnvironmentTheme(preset: EnvironmentPreset) {
+    this.scene.background = new THREE.Color(preset.skyColor);
+    this.scene.fog = new THREE.FogExp2(preset.fogColor, 0.008);
+
+    if (this.hemiLight) {
+      this.hemiLight.color.setHex(preset.hemiSkyColor);
+      this.hemiLight.groundColor.setHex(preset.hemiGroundColor);
+    }
+    if (this.keyLight) {
+      this.keyLight.color.setHex(preset.keyLightColor);
+    }
+  }
+
+  public setEnvironment(type: EnvironmentType) {
+    this.currentEnvironment = type;
+    this.envPreset = buildEnvironmentPreset(type);
+    this.applyEnvironmentTheme(this.envPreset);
+
+    // Rebuild track chunks with the new environment styling
+    for (const chunk of this.chunks) {
+      this.scene.remove(chunk.group);
+    }
+    this.chunks = [];
+    this.nextChunkZ = this.distanceRun - 20;
+    for (let i = 0; i < this.TOTAL_CHUNKS; i++) {
+      this.generateChunk(i === 0);
+    }
   }
 
   private onResize = () => {
@@ -268,14 +291,6 @@ export class NeonRushEngine {
   };
 
   private initWorld() {
-    // Shared Road Materials
-    this.roadMaterial = new THREE.MeshStandardMaterial({
-      color: 0x090d16,
-      roughness: 0.6,
-      metalness: 0.2,
-    });
-
-    // Shared Coin geometry & glowing material
     this.coinGeometry = new THREE.CylinderGeometry(0.38, 0.38, 0.08, 16);
     this.coinGeometry.rotateZ(Math.PI / 2);
     this.coinMaterial = new THREE.MeshStandardMaterial({
@@ -283,56 +298,12 @@ export class NeonRushEngine {
       metalness: 0.9,
       roughness: 0.15,
       emissive: 0xeab308,
-      emissiveIntensity: 0.65,
+      emissiveIntensity: 0.7,
     });
 
-    // Create Initial Endless Track Chunks
     this.nextChunkZ = -20;
     for (let i = 0; i < this.TOTAL_CHUNKS; i++) {
-      this.generateChunk(i === 0); // First chunk is clear of obstacles
-    }
-
-    // Distant Cyber City Skyline
-    this.initSkyline();
-  }
-
-  private initSkyline() {
-    this.sceneryGroup = new THREE.Group();
-    this.scene.add(this.sceneryGroup);
-
-    const towerGeo = new THREE.BoxGeometry(1, 1, 1);
-    const towerMat1 = new THREE.MeshStandardMaterial({ color: 0x090d1a, roughness: 0.8, metalness: 0.3 });
-    const towerMat2 = new THREE.MeshStandardMaterial({
-      color: 0x0284c7,
-      roughness: 0.2,
-      metalness: 0.8,
-      emissive: 0x0369a1,
-      emissiveIntensity: 0.3,
-    });
-
-    // Buildings on left and right flanks
-    for (let i = 0; i < 30; i++) {
-      const isLeft = i % 2 === 0;
-      const x = isLeft ? -18 - Math.random() * 25 : 18 + Math.random() * 25;
-      const z = (i * 20) % 350;
-      const h = 25 + Math.random() * 60;
-      const w = 8 + Math.random() * 12;
-
-      const building = new THREE.Mesh(towerGeo, Math.random() > 0.4 ? towerMat1 : towerMat2);
-      building.scale.set(w, h, w);
-      building.position.set(x, h / 2 - 2, z);
-      this.sceneryGroup.add(building);
-
-      // Holographic billboard accents
-      if (Math.random() > 0.6) {
-        const signMat = new THREE.MeshBasicMaterial({
-          color: Math.random() > 0.5 ? 0x06b6d4 : 0xf43f5e,
-        });
-        const sign = new THREE.Mesh(towerGeo, signMat);
-        sign.scale.set(w * 0.8, 4, 0.4);
-        sign.position.set(x + (isLeft ? 2 : -2), h * 0.7, z);
-        this.sceneryGroup.add(sign);
-      }
+      this.generateChunk(i === 0);
     }
   }
 
@@ -343,55 +314,53 @@ export class NeonRushEngine {
     const obstacles: ObstacleInstance[] = [];
     const coins: CoinInstance[] = [];
     const powerUps: PowerUpItemInstance[] = [];
+    const landmarks: THREE.Object3D[] = [];
 
-    // Roadway platform (3 lanes wide + shoulders)
-    const roadWidth = LANE_WIDTH * 3 + 2.5;
+    // Roadway platform
+    const roadWidth = LANE_WIDTH * 3 + 2.6;
     const roadGeo = new THREE.BoxGeometry(roadWidth, 0.8, this.CHUNK_LENGTH);
-    const road = new THREE.Mesh(roadGeo, this.roadMaterial);
+    const road = new THREE.Mesh(roadGeo, this.envPreset.roadMat);
     road.position.set(0, -0.4, this.CHUNK_LENGTH / 2);
     road.receiveShadow = true;
     chunkGroup.add(road);
 
     // Neon Curbs & Lane Divider Lines
-    const laneDividerMat = new THREE.MeshStandardMaterial({
-      color: 0x06b6d4,
-      emissive: 0x0891b2,
-      emissiveIntensity: 0.8,
-    });
-
     const dividerGeo = new THREE.BoxGeometry(0.12, 0.05, this.CHUNK_LENGTH);
-    const divLeft = new THREE.Mesh(dividerGeo, laneDividerMat);
+    const divLeft = new THREE.Mesh(dividerGeo, this.envPreset.dividerMat);
     divLeft.position.set(-LANE_WIDTH / 2, 0.02, this.CHUNK_LENGTH / 2);
     chunkGroup.add(divLeft);
 
-    const divRight = new THREE.Mesh(dividerGeo, laneDividerMat);
+    const divRight = new THREE.Mesh(dividerGeo, this.envPreset.dividerMat);
     divRight.position.set(LANE_WIDTH / 2, 0.02, this.CHUNK_LENGTH / 2);
     chunkGroup.add(divRight);
 
-    // Glowing Outer Barrier Rails
-    const railMat = new THREE.MeshStandardMaterial({
-      color: 0xf43f5e,
-      emissive: 0xe11d48,
-      emissiveIntensity: 0.6,
-    });
-    const railGeo = new THREE.BoxGeometry(0.3, 0.8, this.CHUNK_LENGTH);
-    const railL = new THREE.Mesh(railGeo, railMat);
-    railL.position.set(-roadWidth / 2 + 0.15, 0.4, this.CHUNK_LENGTH / 2);
+    // Outer Barrier Rails
+    const railGeo = new THREE.BoxGeometry(0.32, 0.85, this.CHUNK_LENGTH);
+    const railL = new THREE.Mesh(railGeo, this.envPreset.railMat);
+    railL.position.set(-roadWidth / 2 + 0.16, 0.42, this.CHUNK_LENGTH / 2);
     chunkGroup.add(railL);
 
-    const railR = new THREE.Mesh(railGeo, railMat);
-    railR.position.set(roadWidth / 2 - 0.15, 0.4, this.CHUNK_LENGTH / 2);
+    const railR = new THREE.Mesh(railGeo, this.envPreset.railMat);
+    railR.position.set(roadWidth / 2 - 0.16, 0.42, this.CHUNK_LENGTH / 2);
     chunkGroup.add(railR);
 
-    // Spawn Obstacles & Collectibles (skip on initial spawn safety zone)
+    // Environment Landmarks on flanks
+    for (let l = 10; l < this.CHUNK_LENGTH; l += 25) {
+      const leftObj = this.envPreset.createLandmark(-14 - Math.random() * 8, l, true);
+      const rightObj = this.envPreset.createLandmark(14 + Math.random() * 8, l, false);
+      chunkGroup.add(leftObj, rightObj);
+      landmarks.push(leftObj, rightObj);
+    }
+
+    // Spawn Obstacles & Collectibles
     if (!isStartChunk) {
-      const zSteps = [12, 28, 44];
+      const zSteps = [14, 32, 48];
       for (const zOffset of zSteps) {
         const lane = ([-1, 0, 1] as const)[Math.floor(Math.random() * 3)];
         const patternRoll = Math.random();
 
         if (patternRoll < 0.35) {
-          // Cyber Train Obstacle
+          // Futuristic Cyber Train
           const train = this.createCyberTrainMesh();
           train.position.set(getLaneX(lane), 0, zOffset);
           chunkGroup.add(train);
@@ -402,13 +371,13 @@ export class NeonRushEngine {
             z: this.nextChunkZ + zOffset,
             width: 2.2,
             height: 3.2,
-            depth: 8.0,
+            depth: 8.5,
             requiresSlide: false,
             requiresJump: false,
             canRamp: true,
           });
         } else if (patternRoll < 0.6) {
-          // Low Laser Barrier (requires SLIDE)
+          // Low Barrier (must slide under!)
           const barrier = this.createSlideBarrierMesh();
           barrier.position.set(getLaneX(lane), 0, zOffset);
           chunkGroup.add(barrier);
@@ -424,7 +393,7 @@ export class NeonRushEngine {
             requiresJump: false,
           });
         } else if (patternRoll < 0.85) {
-          // High Laser Hurdle (requires JUMP)
+          // High Hurdle (must jump over!)
           const hurdle = this.createJumpHurdleMesh();
           hurdle.position.set(getLaneX(lane), 0, zOffset);
           chunkGroup.add(hurdle);
@@ -440,7 +409,7 @@ export class NeonRushEngine {
             requiresJump: true,
           });
         } else {
-          // Tech Crate Stack
+          // Tech Crate Barricade
           const crate = this.createCrateMesh();
           crate.position.set(getLaneX(lane), 0, zOffset);
           chunkGroup.add(crate);
@@ -457,7 +426,7 @@ export class NeonRushEngine {
           });
         }
 
-        // Spawn Coin Trails in adjacent or jumping lanes
+        // Coin trails in adjacent lanes
         const coinLane = ([-1, 0, 1] as const).find((l) => l !== lane) || 0;
         for (let c = 0; c < 5; c++) {
           const coinMesh = new THREE.Mesh(this.coinGeometry, this.coinMaterial);
@@ -478,14 +447,14 @@ export class NeonRushEngine {
           });
         }
 
-        // Rare Power-Up Spawn (~20% chance)
-        if (Math.random() < 0.22) {
-          const pTypes: PowerUpType[] = ['skateboard', 'magnet', 'multiplier2x', 'neondash'];
+        // Power-Up Orb Spawn (All 6 power-ups from reference image)
+        if (Math.random() < 0.28) {
+          const pTypes: PowerUpType[] = ['magnet', 'shield', 'multiplier2x', 'superjump', 'coinboost', 'skateboard'];
           const pType = pTypes[Math.floor(Math.random() * pTypes.length)];
           const pLane = ([-1, 0, 1] as const)[Math.floor(Math.random() * 3)];
           const pMesh = this.createPowerUpMesh(pType);
-          const pZ = zOffset + 7;
-          pMesh.position.set(getLaneX(pLane), 1.2, pZ);
+          const pZ = zOffset + 7.5;
+          pMesh.position.set(getLaneX(pLane), 1.25, pZ);
           chunkGroup.add(pMesh);
 
           powerUps.push({
@@ -493,7 +462,7 @@ export class NeonRushEngine {
             mesh: pMesh,
             lane: pLane,
             x: getLaneX(pLane),
-            y: 1.2,
+            y: 1.25,
             z: this.nextChunkZ + pZ,
             collected: false,
           });
@@ -509,6 +478,7 @@ export class NeonRushEngine {
       obstacles,
       coins,
       powerUps,
+      landmarks,
     });
 
     this.nextChunkZ += this.CHUNK_LENGTH;
@@ -520,33 +490,35 @@ export class NeonRushEngine {
     const windowMat = new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
       emissive: 0x0284c7,
+      emissiveIntensity: 0.9,
+    });
+    const warningMat = new THREE.MeshStandardMaterial({
+      color: 0xef4444,
+      emissive: 0xdc2626,
       emissiveIntensity: 0.8,
     });
 
-    // Train Body
-    const bodyGeo = new THREE.BoxGeometry(2.1, 2.6, 7.5);
+    const bodyGeo = new THREE.BoxGeometry(2.1, 2.6, 7.8);
     const body = new THREE.Mesh(bodyGeo, trainMat);
     body.position.set(0, 1.3, 0);
     body.castShadow = true;
     group.add(body);
 
-    // Front Sloped Nose / Windshield
+    // Front Windshield
     const noseGeo = new THREE.BoxGeometry(1.9, 1.2, 0.4);
     const nose = new THREE.Mesh(noseGeo, windowMat);
-    nose.position.set(0, 1.8, -3.76);
+    nose.position.set(0, 1.8, -3.92);
     group.add(nose);
 
-    // Side illuminated neon windows
-    const winGeo = new THREE.BoxGeometry(0.04, 0.6, 6.0);
-    const winL = new THREE.Mesh(winGeo, windowMat);
-    winL.position.set(-1.06, 1.6, 0);
-    const winR = new THREE.Mesh(winGeo, windowMat);
-    winR.position.set(1.06, 1.6, 0);
-    group.add(winL, winR);
+    // Front Red Warning Barricade
+    const barGeo = new THREE.BoxGeometry(1.8, 0.3, 0.2);
+    const bar = new THREE.Mesh(barGeo, warningMat);
+    bar.position.set(0, 0.6, -3.95);
+    group.add(bar);
 
-    // Top Roof Ramp (allows jumping on top!)
+    // Top Roof Platform
     const rampMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5 });
-    const rampGeo = new THREE.BoxGeometry(1.8, 0.1, 7.2);
+    const rampGeo = new THREE.BoxGeometry(1.8, 0.1, 7.5);
     const ramp = new THREE.Mesh(rampGeo, rampMat);
     ramp.position.set(0, 2.65, 0);
     group.add(ramp);
@@ -560,10 +532,9 @@ export class NeonRushEngine {
     const laserMat = new THREE.MeshStandardMaterial({
       color: 0xf43f5e,
       emissive: 0xf43f5e,
-      emissiveIntensity: 1.0,
+      emissiveIntensity: 1.1,
     });
 
-    // Left & Right Support Posts
     const postGeo = new THREE.CylinderGeometry(0.12, 0.12, 2.4, 8);
     const postL = new THREE.Mesh(postGeo, frameMat);
     postL.position.set(-1.1, 1.2, 0);
@@ -571,13 +542,11 @@ export class NeonRushEngine {
     postR.position.set(1.1, 1.2, 0);
     group.add(postL, postR);
 
-    // High beam that blocks jumps (must slide under!)
     const highBeamGeo = new THREE.BoxGeometry(2.3, 1.1, 0.35);
     const highBeam = new THREE.Mesh(highBeamGeo, frameMat);
     highBeam.position.set(0, 1.8, 0);
     group.add(highBeam);
 
-    // Warning hologram strip
     const holoGeo = new THREE.BoxGeometry(2.1, 0.3, 0.38);
     const holo = new THREE.Mesh(holoGeo, laserMat);
     holo.position.set(0, 1.7, 0);
@@ -595,13 +564,11 @@ export class NeonRushEngine {
       emissiveIntensity: 1.2,
     });
 
-    // Low hurdle beam (must jump over)
     const beamGeo = new THREE.BoxGeometry(2.2, 0.45, 0.3);
     const beam = new THREE.Mesh(beamGeo, postMat);
     beam.position.set(0, 0.35, 0);
     group.add(beam);
 
-    // Glowing laser beam
     const glowGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.2, 8);
     glowGeo.rotateZ(Math.PI / 2);
     const glow = new THREE.Mesh(glowGeo, laserMat);
@@ -618,10 +585,7 @@ export class NeonRushEngine {
       roughness: 0.6,
       metalness: 0.3,
     });
-    const frameMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
-      metalness: 0.8,
-    });
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8 });
 
     const boxGeo = new THREE.BoxGeometry(1.6, 1.4, 1.6);
     const box = new THREE.Mesh(boxGeo, crateMat);
@@ -640,9 +604,11 @@ export class NeonRushEngine {
   private createPowerUpMesh(type: PowerUpType): THREE.Group {
     const group = new THREE.Group();
     let color = 0x06b6d4;
-    if (type === 'skateboard') color = 0x10b981;
+    if (type === 'shield') color = 0x38bdf8;
     if (type === 'multiplier2x') color = 0xf59e0b;
-    if (type === 'neondash') color = 0xa855f7;
+    if (type === 'superjump') color = 0xef4444;
+    if (type === 'coinboost') color = 0xfacc15;
+    if (type === 'skateboard') color = 0x10b981;
 
     const orbMat = new THREE.MeshStandardMaterial({
       color,
@@ -656,7 +622,6 @@ export class NeonRushEngine {
     const orb = new THREE.Mesh(orbGeo, orbMat);
     group.add(orb);
 
-    // Rotating ring
     const ringGeo = new THREE.TorusGeometry(0.65, 0.06, 8, 24);
     const ring = new THREE.Mesh(ringGeo, orbMat);
     ring.rotation.x = Math.PI / 3;
@@ -670,14 +635,8 @@ export class NeonRushEngine {
     this.playerGroup.position.set(0, 0, 0);
     this.scene.add(this.playerGroup);
 
-    this.characterHandle = createCharacterMesh(this.selectedCharacterId);
+    this.characterHandle = createCharacterMesh(this.selectedCharacterId, this.selectedSkateboardId);
     this.playerGroup.add(this.characterHandle.root);
-
-    // Attach Skateboard Mesh
-    this.skateboardMesh = createSkateboardMesh(this.selectedSkateboardId);
-    this.skateboardMesh.position.set(0, -0.05, 0);
-    this.skateboardMesh.visible = false; // Visible only when hoverboard shield active
-    this.playerGroup.add(this.skateboardMesh);
   }
 
   public updateEquippedItems(characterId: string, skateboardId: string, charBonus: number) {
@@ -688,17 +647,13 @@ export class NeonRushEngine {
     if (this.characterHandle) {
       this.playerGroup.remove(this.characterHandle.root);
     }
-    if (this.skateboardMesh) {
-      this.playerGroup.remove(this.skateboardMesh);
-    }
 
-    this.characterHandle = createCharacterMesh(characterId);
+    this.characterHandle = createCharacterMesh(characterId, skateboardId);
     this.playerGroup.add(this.characterHandle.root);
+  }
 
-    this.skateboardMesh = createSkateboardMesh(skateboardId);
-    this.skateboardMesh.position.set(0, -0.05, 0);
-    this.skateboardMesh.visible = this.hasSkateboardShield;
-    this.playerGroup.add(this.skateboardMesh);
+  public getEnvironment(): EnvironmentType {
+    return this.currentEnvironment;
   }
 
   private initParticles() {
@@ -707,7 +662,7 @@ export class NeonRushEngine {
     this.particleLifetimes = new Float32Array(this.particleCount);
 
     for (let i = 0; i < this.particleCount; i++) {
-      this.particleLifetimes[i] = -1; // Inactive
+      this.particleLifetimes[i] = -1;
     }
 
     this.particleGeo = new THREE.BufferGeometry();
@@ -717,7 +672,7 @@ export class NeonRushEngine {
       color: 0x38bdf8,
       size: 0.35,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.85,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -745,20 +700,16 @@ export class NeonRushEngine {
     }
   }
 
-  // Input bindings
   private bindInputs() {
     window.addEventListener('keydown', this.handleKeyDown);
 
     const canvas = this.renderer.domElement;
     canvas.addEventListener('touchstart', this.handleTouchStart, { passive: true });
     canvas.addEventListener('touchend', this.handleTouchEnd, { passive: true });
-
-    // Focus / Blur Hygiene
     window.addEventListener('blur', this.handleWindowBlur);
   }
 
   private handleWindowBlur = () => {
-    // Clear inputs on blur without forcefully showing modal
     this.jumpBuffered = false;
   };
 
@@ -786,8 +737,7 @@ export class NeonRushEngine {
     } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
       this.triggerSlide();
     } else if (e.key === 'b' || e.key === 'B') {
-      // Activate Skateboard power-up via key
-      this.activatePowerUp('skateboard', 12);
+      this.activatePowerUp('skateboard', 15);
     }
   };
 
@@ -814,9 +764,8 @@ export class NeonRushEngine {
       const absX = Math.abs(dx);
       const absY = Math.abs(dy);
 
-      // Tap / Double tap
       if (absX < 20 && absY < 20 && dt < 250) {
-        this.activatePowerUp('skateboard', 12);
+        this.activatePowerUp('skateboard', 15);
         return;
       }
 
@@ -843,17 +792,18 @@ export class NeonRushEngine {
   public triggerJump() {
     if (this.state !== 'running') return;
 
-    // Coyote time or grounded check
+    const hasSuperJump = this.activePowerUps.has('superjump');
+    const jumpPower = hasSuperJump ? 18.5 : 13.8;
+
     if (this.isGrounded || this.coyoteTimer > 0) {
       this.isGrounded = false;
       this.coyoteTimer = 0;
-      this.playerVy = 13.5;
+      this.playerVy = jumpPower;
       this.isSliding = false;
       this.slideTimer = 0;
       this.totalJumps++;
       sound.playJump();
     } else {
-      // Input buffering
       this.jumpBuffered = true;
       this.jumpBufferTimer = 0.12;
     }
@@ -866,28 +816,56 @@ export class NeonRushEngine {
     this.totalSlides++;
     sound.playSlide();
 
-    // Fast fall if mid-air
     if (!this.isGrounded) {
       this.playerVy = -18.0;
     }
   }
 
-  public activatePowerUp(type: PowerUpType, durationSec: number = 10) {
+  public activatePowerUp(type: PowerUpType, durationSec: number = 12) {
     sound.playPowerUp();
     this.totalPowerups++;
 
-    if (type === 'skateboard') {
-      this.hasSkateboardShield = true;
+    let name = 'POWER-UP';
+    let icon = '⚡';
+    let color = '#38bdf8';
+
+    if (type === 'magnet') {
+      name = 'COIN MAGNET';
+      icon = '🧲';
+      color = '#06b6d4';
+    } else if (type === 'shield') {
+      name = 'SHIELD';
+      icon = '🛡️';
+      color = '#38bdf8';
+      this.hasShield = true;
+    } else if (type === 'multiplier2x') {
+      name = '2X SCORE';
+      icon = '⭐';
+      color = '#f59e0b';
+    } else if (type === 'superjump') {
+      name = 'SUPER JUMP';
+      icon = '⬆️';
+      color = '#ef4444';
+    } else if (type === 'coinboost') {
+      name = 'COIN BOOST';
+      icon = '💰';
+      color = '#facc15';
+    } else if (type === 'skateboard') {
+      name = 'HOVERBOARD';
+      icon = '🛹';
+      color = '#10b981';
+      this.onSkateboard = true;
+      this.hasShield = true;
       this.skateboardsUsed++;
-      if (this.skateboardMesh) {
-        this.skateboardMesh.visible = true;
-      }
     }
 
     this.activePowerUps.set(type, {
       type,
+      name,
       durationTotal: durationSec,
       durationRemaining: durationSec,
+      icon,
+      color,
     });
 
     this.callbacks.onPowerUpUpdate(Array.from(this.activePowerUps.values()));
@@ -912,7 +890,7 @@ export class NeonRushEngine {
     if (this.state !== 'paused') return;
     this.state = 'running';
     document.body.dataset.state = 'playing';
-    this.clock.getDelta(); // Clear accumulated delta
+    this.clock.getDelta();
     this.callbacks.onStateChange('running');
   }
 
@@ -945,13 +923,12 @@ export class NeonRushEngine {
     this.skateboardsUsed = 0;
     this.hitCount = 0;
     this.runDurationSec = 0;
+    this.hasShield = false;
+    this.onSkateboard = false;
 
     this.activePowerUps.clear();
-    this.hasSkateboardShield = false;
-    if (this.skateboardMesh) this.skateboardMesh.visible = false;
     this.callbacks.onPowerUpUpdate([]);
 
-    // Clear and rebuild chunks
     for (const chunk of this.chunks) {
       this.scene.remove(chunk.group);
     }
@@ -962,25 +939,20 @@ export class NeonRushEngine {
     }
 
     this.playerGroup.position.set(0, 0, 0);
-    this.camera.position.set(0, 3.8, -5.5);
-    this.camera.lookAt(0, 1.6, 6.0);
-
     this.callbacks.onScoreUpdate(0, 0, 0, 1);
     this.callbacks.onStateChange('ready');
   }
 
-  // Loop & Pacing
   private startLoop() {
     const tick = () => {
       if (this.isDestroyed) return;
 
       const rawDt = this.clock.getDelta();
-      const dt = Math.min(rawDt, 0.05); // Clamped dt
+      const dt = Math.min(rawDt, 0.05);
 
       this.update(dt);
       this.renderer.render(this.scene, this.camera);
 
-      // Software WebGL pacing via fenceSync
       if (this.isSoftwareGl) {
         this.afterDraw(tick);
       } else {
@@ -1019,12 +991,12 @@ export class NeonRushEngine {
   private update(dt: number) {
     const time = performance.now() * 0.001;
 
-    // Ready Title Screen Turntable Showcase
+    // Ready Showcase Turntable
     if (this.state === 'ready') {
-      this.characterHandle.updateAnimation(time, false, false, false);
-      this.characterHandle.root.rotation.y = Math.sin(time * 0.8) * 0.4;
-      this.camera.position.set(Math.sin(time * 0.4) * 0.6, 1.5, 3.2);
-      this.camera.lookAt(0, 1.0, 0);
+      this.characterHandle.updateAnimation(time, false, false, false, true);
+      this.characterHandle.root.rotation.y = Math.sin(time * 0.8) * 0.45;
+      this.camera.position.set(Math.sin(time * 0.4) * 0.6, 1.45, 3.2);
+      this.camera.lookAt(0, 0.95, 0);
       return;
     }
 
@@ -1032,28 +1004,23 @@ export class NeonRushEngine {
       return;
     }
 
-    // Hitstop freeze handling
     if (this.hitstopTimer > 0) {
       this.hitstopTimer -= dt;
-      // Visual camera shake continues during hitstop
       this.updateCamera(dt, 0);
       return;
     }
 
     this.runDurationSec += dt;
 
-    // Speed progression ramp (reaches 34m/s over 3000m)
-    const targetSpeed = Math.min(35.0, this.baseSpeed + Math.sqrt(this.distanceRun) * 0.2);
-    const speedBoost = this.activePowerUps.has('neondash') ? 1.5 : 1.0;
+    const targetSpeed = Math.min(36.0, this.baseSpeed + Math.sqrt(this.distanceRun) * 0.22);
+    const speedBoost = this.onSkateboard ? 1.25 : 1.0;
     this.currentSpeed = targetSpeed * speedBoost;
 
-    // Advance world distance
     const moveDist = this.currentSpeed * dt;
     this.distanceRun += moveDist;
 
-    // Multiplier calculation
     const hasDouble = this.activePowerUps.has('multiplier2x');
-    this.speedMultiplier = (1 + Math.floor(this.distanceRun / 500)) * (hasDouble ? 2 : 1);
+    this.speedMultiplier = (1 + Math.floor(this.distanceRun / 450)) * (hasDouble ? 2 : 1);
     this.currentScore = calculateRunScore(
       this.distanceRun,
       this.coinsCollected,
@@ -1062,16 +1029,16 @@ export class NeonRushEngine {
       hasDouble
     );
 
-    // Update Power-up Timers
+    // Power-up duration countdowns
     if (this.activePowerUps.size > 0) {
       let changed = false;
       for (const [type, item] of this.activePowerUps.entries()) {
         item.durationRemaining -= dt;
         if (item.durationRemaining <= 0) {
           this.activePowerUps.delete(type);
-          if (type === 'skateboard') {
-            this.hasSkateboardShield = false;
-            if (this.skateboardMesh) this.skateboardMesh.visible = false;
+          if (type === 'shield' || type === 'skateboard') {
+            this.hasShield = false;
+            this.onSkateboard = false;
           }
           changed = true;
         }
@@ -1081,10 +1048,9 @@ export class NeonRushEngine {
       }
     }
 
-    // Player Lane Damping
+    // Player Movement
     this.playerX = THREE.MathUtils.damp(this.playerX, this.targetLaneX, 18, dt);
 
-    // Jump Physics & Gravity
     const gravity = -34.0;
     if (!this.isGrounded) {
       this.playerVy += gravity * dt;
@@ -1095,7 +1061,6 @@ export class NeonRushEngine {
         this.playerVy = 0;
         this.isGrounded = true;
 
-        // Consume buffered jump
         if (this.jumpBuffered && this.jumpBufferTimer > 0) {
           this.triggerJump();
           this.jumpBuffered = false;
@@ -1110,7 +1075,6 @@ export class NeonRushEngine {
       if (this.jumpBufferTimer <= 0) this.jumpBuffered = false;
     }
 
-    // Sliding Timer
     if (this.isSliding) {
       this.slideTimer -= dt;
       if (this.slideTimer <= 0) {
@@ -1118,32 +1082,14 @@ export class NeonRushEngine {
       }
     }
 
-    // Apply Player Position
     this.playerGroup.position.set(this.playerX, this.playerY, this.distanceRun);
-    this.characterHandle.updateAnimation(time, true, !this.isGrounded, this.isSliding);
+    this.characterHandle.updateAnimation(time, true, !this.isGrounded, this.isSliding, this.onSkateboard);
 
-    // Skateboard pitch tilt
-    if (this.hasSkateboardShield && this.skateboardMesh) {
-      this.skateboardMesh.rotation.z = (this.targetLaneX - this.playerX) * 0.25;
-      this.skateboardMesh.position.y = this.isSliding ? 0.15 : -0.05;
-    }
-
-    // Check Collisions & Pickups
     this.checkCollisions();
-
-    // Recycle Track Chunks
     this.updateTrackChunks();
-
-    // Camera follow with damping & trauma shake
     this.updateCamera(dt, moveDist);
-
-    // Update Particles
     this.updateParticles(dt);
 
-    // Scenery infinite shift
-    this.sceneryGroup.position.z = Math.floor(this.distanceRun / 150) * 150;
-
-    // Report HUD throttled
     this.callbacks.onScoreUpdate(this.currentScore, Math.floor(this.distanceRun), this.coinsCollected, this.speedMultiplier);
   }
 
@@ -1152,7 +1098,6 @@ export class NeonRushEngine {
     const playerX = this.playerX;
     const playerY = this.playerY;
 
-    // Player Bounding Box
     const playerHeight = this.isSliding ? 0.75 : 1.7;
     const playerWidth = 0.7;
     const playerDepth = 0.7;
@@ -1161,31 +1106,29 @@ export class NeonRushEngine {
     _playerBox.max.set(playerX + playerWidth / 2, playerY + playerHeight, playerZ + playerDepth / 2);
 
     const hasMagnet = this.activePowerUps.has('magnet');
-    const magnetRadius = 7.5;
+    const magnetRadius = 8.5;
+    const hasCoinBoost = this.activePowerUps.has('coinboost');
 
     for (const chunk of this.chunks) {
       // Coins
       for (const coin of chunk.coins) {
         if (coin.collected) continue;
 
-        // Magnet attraction
         if (hasMagnet) {
           const dx = playerX - coin.x;
           const dy = playerY + 0.8 - coin.y;
           const dz = playerZ - coin.z;
           const distSq = dx * dx + dy * dy + dz * dz;
           if (distSq < magnetRadius * magnetRadius) {
-            coin.x += dx * 0.18;
-            coin.y += dy * 0.18;
-            coin.z += dz * 0.18;
+            coin.x += dx * 0.2;
+            coin.y += dy * 0.2;
+            coin.z += dz * 0.2;
             coin.mesh.position.set(coin.x, coin.y, coin.z - chunk.zStart);
           }
         }
 
-        // Coin spin animation
         coin.mesh.rotation.y += 0.08;
 
-        // Coin collection collision
         const distZ = Math.abs(coin.z - playerZ);
         const distX = Math.abs(coin.x - playerX);
         const distY = Math.abs(coin.y - (playerY + 0.8));
@@ -1193,16 +1136,15 @@ export class NeonRushEngine {
         if (distZ < 1.1 && distX < 1.2 && distY < 1.4) {
           coin.collected = true;
           coin.mesh.visible = false;
-          this.coinsCollected++;
+          this.coinsCollected += hasCoinBoost ? 2 : 1;
           sound.playCoin();
           this.spawnParticles(coin.x, coin.y, coin.z, 8, 0xfacc15);
         }
       }
 
-      // Power-up Orbs
+      // Power-ups
       for (const p of chunk.powerUps) {
         if (p.collected) continue;
-
         p.mesh.rotation.y += 0.05;
 
         const distZ = Math.abs(p.z - playerZ);
@@ -1210,7 +1152,7 @@ export class NeonRushEngine {
         if (distZ < 1.3 && distX < 1.2 && playerY < 2.0) {
           p.collected = true;
           p.mesh.visible = false;
-          this.activatePowerUp(p.type, p.type === 'skateboard' ? 14 : 10);
+          this.activatePowerUp(p.type, p.type === 'skateboard' ? 18 : 12);
           this.spawnParticles(p.x, p.y, p.z, 16, 0x38bdf8);
         }
       }
@@ -1220,27 +1162,16 @@ export class NeonRushEngine {
         const obsZ = obs.z;
         const obsX = getLaneX(obs.lane);
 
-        // Near check
         if (Math.abs(obsZ - playerZ) > obs.depth / 2 + 2) continue;
 
         _obstacleBox.min.set(obsX - obs.width / 2, 0, obsZ - obs.depth / 2);
         _obstacleBox.max.set(obsX + obs.width / 2, obs.height, obsZ + obs.depth / 2);
-
-        // Tolerance for fair arcade feel
-        _obstacleBox.expandByScalar(-0.15);
+        _obstacleBox.expandByScalar(-0.16);
 
         if (_playerBox.intersectsBox(_obstacleBox)) {
-          // If obstacle allows sliding under and player is sliding
-          if (obs.requiresSlide && this.isSliding && playerY <= 0.2) {
-            continue; // Safely slided under!
-          }
+          if (obs.requiresSlide && this.isSliding && playerY <= 0.2) continue;
+          if (obs.requiresJump && playerY > obs.height - 0.2) continue;
 
-          // If obstacle requires jumping and player is high enough
-          if (obs.requiresJump && playerY > obs.height - 0.2) {
-            continue; // Safely cleared jump!
-          }
-
-          // Collision Occurred!
           this.handleCollision(obs);
           return;
         }
@@ -1253,17 +1184,17 @@ export class NeonRushEngine {
     sound.playCrash();
     this.spawnParticles(this.playerX, this.playerY + 0.8, this.distanceRun, 35, 0xf43f5e);
     this.cameraTrauma = 1.0;
-    this.hitstopTimer = 0.06; // 60ms hitstop freeze
+    this.hitstopTimer = 0.06;
 
-    // If skateboard shield is active, sacrifice shield instead of death!
-    if (this.hasSkateboardShield) {
-      this.hasSkateboardShield = false;
+    // Shield protection saves player from crash!
+    if (this.hasShield || this.onSkateboard) {
+      this.hasShield = false;
+      this.onSkateboard = false;
+      this.activePowerUps.delete('shield');
       this.activePowerUps.delete('skateboard');
-      if (this.skateboardMesh) this.skateboardMesh.visible = false;
       this.callbacks.onPowerUpUpdate(Array.from(this.activePowerUps.values()));
       this.callbacks.onHit(0);
 
-      // Bounce back to safe center lane and clear current obstacle
       obs.mesh.visible = false;
       return;
     }
@@ -1290,8 +1221,6 @@ export class NeonRushEngine {
 
   private updateTrackChunks() {
     const playerZ = this.distanceRun;
-
-    // If oldest chunk is behind camera by > 40m, recycle it to the front
     const oldest = this.chunks[0];
     if (oldest && playerZ - (oldest.zStart + oldest.length) > 35) {
       this.scene.remove(oldest.group);
@@ -1300,8 +1229,7 @@ export class NeonRushEngine {
     }
   }
 
-  private updateCamera(dt: number, moveDist: number) {
-    // Dynamic camera follow target
+  private updateCamera(dt: number, _moveDist: number) {
     const targetZ = this.distanceRun - 5.5;
     const targetY = 3.6 + this.playerY * 0.35;
     const targetX = this.playerX * 0.65;
@@ -1310,7 +1238,6 @@ export class NeonRushEngine {
     this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, targetY, 14, dt);
     this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, targetZ, 20, dt);
 
-    // Trauma shake decay
     if (this.cameraTrauma > 0) {
       this.cameraTrauma = Math.max(0, this.cameraTrauma - dt * 2.5);
       const shake = this.cameraTrauma * this.cameraTrauma;
@@ -1335,7 +1262,7 @@ export class NeonRushEngine {
         this.particlePositions[i * 3 + 1] += this.particleVelocities[i * 3 + 1] * dt;
         this.particlePositions[i * 3 + 2] += this.particleVelocities[i * 3 + 2] * dt;
 
-        this.particleVelocities[i * 3 + 1] -= 9.8 * dt; // Gravity
+        this.particleVelocities[i * 3 + 1] -= 9.8 * dt;
         active++;
       }
     }

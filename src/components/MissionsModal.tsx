@@ -1,11 +1,17 @@
 /**
- * NEON RUSH - Missions & 7-Day Daily Rewards Modal
- * Implements daily missions, distance challenges, login streak bonus calendar,
- * and duplicate claim prevention.
+ * NEON RUSH - Missions & Achievements Screen
+ * 1-to-1 match with the "MISSIONS & ACHIEVEMENTS" panel in the master visual reference sheet:
+ * - Tabs: Missions | Achievements
+ * - Missions List:
+ *     1. Daily Runner: Run 5,000 meters (2,460 / 5,000) — Reward: +500 Coins
+ *     2. First Run: Complete 1 run (1 / 1) — Reward: +100 Coins [Claim]
+ *     3. Collect 1,000 Coins: (1,000 / 1,000) — Reward: +400 Coins [Claim]
+ *     4. High Score Champion: Reach 50,000 score (32,560 / 50,000) — Reward: +600 Coins
+ * - Includes 7-Day Login Streak Rewards
  */
 
 import React, { useState } from 'react';
-import { X, CheckCircle2, Gift, Calendar, Trophy, Zap, Award } from 'lucide-react';
+import { X, Trophy, CheckCircle2, Award, Sparkles, Gift } from 'lucide-react';
 import { Mission, PlayerProfile } from '../types/game';
 import { DAILY_REWARDS_TABLE } from '../services/storage';
 import { sound } from '../game/audio';
@@ -25,227 +31,188 @@ export const MissionsModal: React.FC<MissionsModalProps> = ({
   onClaimMission,
   onClaimDailyReward,
 }) => {
-  const [activeTab, setActiveTab] = useState<'missions' | 'daily'>('missions');
+  const [activeTab, setActiveTab] = useState<'missions' | 'achievements'>('missions');
 
-  const handleClaimReward = (m: Mission) => {
-    if (!m.completed || m.claimed) return;
+  const handleClaim = (mission: Mission) => {
     sound.playPurchaseSuccess();
-    onClaimMission(m.id);
+    onClaimMission(mission.id);
   };
 
-  const handleClaimDay = (day: number) => {
-    sound.playPurchaseSuccess();
-    onClaimDailyReward(day);
-  };
+  const currentMissions = missions.filter((m) =>
+    activeTab === 'missions' ? m.type === 'daily' : m.type === 'achievement'
+  );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-6 bg-slate-950/85 backdrop-blur-none font-['Rajdhani']">
-      <div className="w-full max-w-4xl max-h-[92vh] bg-slate-950 border border-rose-500/50 rounded-3xl p-5 md:p-7 shadow-[0_0_50px_rgba(244,63,94,0.25)] flex flex-col gap-5 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/85 backdrop-blur-sm font-['Rajdhani']">
+      <div className="w-full max-w-lg max-h-[92vh] bg-slate-950 border-2 border-indigo-500/60 rounded-3xl p-5 sm:p-6 shadow-[0_0_50px_rgba(99,102,241,0.3)] flex flex-col gap-4 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500 to-pink-500 flex items-center justify-center text-white font-bold text-lg shadow-[0_0_15px_rgba(244,63,94,0.4)]">
-              🎯
-            </div>
-            <div>
-              <h2 className="text-2xl md:text-3xl font-black text-white font-['Orbitron'] tracking-wide">
-                MISSIONS & REWARDS
-              </h2>
-              <p className="text-xs font-semibold text-slate-400">
-                DAILY RUN QUESTS & 7-DAY LOGIN STREAK CALENDAR
-              </p>
-            </div>
-          </div>
-
+        <div className="flex items-center justify-between border-b border-indigo-500/20 pb-3">
+          <h2 className="text-xl sm:text-2xl font-black text-white font-['Orbitron'] tracking-wide">
+            MISSIONS & ACHIEVEMENTS
+          </h2>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="w-9 h-9 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-all cursor-pointer"
+            className="w-8 h-8 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-all cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="flex items-center gap-2">
+        {/* Tabs: Missions | Achievements matching reference */}
+        <div className="flex items-center justify-center gap-2 bg-slate-900/90 border border-slate-800 rounded-xl p-1">
           <button
             onClick={() => {
               setActiveTab('missions');
               sound.playClick();
             }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold font-['Orbitron'] tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
+            className={`flex-1 py-1.5 rounded-lg text-xs font-bold font-['Orbitron'] tracking-wider transition-all cursor-pointer ${
               activeTab === 'missions'
-                ? 'bg-rose-500 text-white shadow-[0_0_15px_rgba(244,63,94,0.4)]'
-                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                ? 'bg-gradient-to-r from-cyan-500 to-indigo-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white'
             }`}
           >
-            <Trophy className="w-3.5 h-3.5" />
-            <span>ACTIVE MISSIONS</span>
+            Missions
           </button>
-
           <button
             onClick={() => {
-              setActiveTab('daily');
+              setActiveTab('achievements');
               sound.playClick();
             }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold font-['Orbitron'] tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
-              activeTab === 'daily'
-                ? 'bg-rose-500 text-white shadow-[0_0_15px_rgba(244,63,94,0.4)]'
-                : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+            className={`flex-1 py-1.5 rounded-lg text-xs font-bold font-['Orbitron'] tracking-wider transition-all cursor-pointer ${
+              activeTab === 'achievements'
+                ? 'bg-gradient-to-r from-cyan-500 to-indigo-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white'
             }`}
           >
-            <Calendar className="w-3.5 h-3.5" />
-            <span>7-DAY LOGIN STREAK ({profile.loginStreak} DAYS)</span>
+            Achievements
           </button>
         </div>
 
-        {/* Tab 1: Missions */}
-        <div className="flex-1 overflow-y-auto pr-1">
-          {activeTab === 'missions' ? (
-            <div className="space-y-3">
-              {missions.map((m) => {
-                const progressPct = Math.min(100, Math.round((m.currentValue / m.targetValue) * 100));
-                const isClaimable = m.completed && !m.claimed;
+        {/* Scrollable Missions List matching reference */}
+        <div className="flex-1 overflow-y-auto pr-1 space-y-3">
+          {currentMissions.map((mission) => {
+            const isCompleted = mission.completed || mission.currentValue >= mission.targetValue;
+            const isClaimed = mission.claimed;
+            const percent = Math.min(100, Math.round((mission.currentValue / mission.targetValue) * 100));
 
-                return (
-                  <div
-                    key={m.id}
-                    className={`bg-slate-900/80 border rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all ${
-                      isClaimable
-                        ? 'border-rose-400 shadow-[0_0_20px_rgba(244,63,94,0.2)]'
-                        : m.claimed
-                        ? 'border-slate-800 opacity-60'
-                        : 'border-slate-800'
-                    }`}
-                  >
-                    <div className="space-y-1.5 flex-1 w-full">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-['Orbitron']">
-                          {m.type}
-                        </span>
-                        <h4 className="font-bold text-white font-['Orbitron'] text-sm">{m.title}</h4>
-                      </div>
+            return (
+              <div
+                key={mission.id}
+                className={`bg-slate-900/80 border rounded-2xl p-3.5 transition-all shadow-md flex items-center justify-between gap-3 ${
+                  isCompleted && !isClaimed
+                    ? 'border-emerald-500/80 shadow-[0_0_15px_rgba(16,185,129,0.25)]'
+                    : 'border-slate-800'
+                }`}
+              >
+                {/* Mission Icon Badge */}
+                <div className="w-12 h-12 rounded-xl bg-slate-800/90 border border-amber-500/40 flex items-center justify-center text-2xl shrink-0 shadow-sm">
+                  {mission.id.includes('daily')
+                    ? '🏃'
+                    : mission.id.includes('first')
+                    ? '🎯'
+                    : mission.id.includes('collect')
+                    ? '💰'
+                    : '⭐'}
+                </div>
 
-                      <p className="text-xs text-slate-400">{m.description}</p>
-
-                      {/* Progress Bar */}
-                      <div className="w-full max-w-md space-y-1">
-                        <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
-                          <div
-                            className="h-full bg-gradient-to-r from-rose-500 to-pink-400 rounded-full transition-all duration-300"
-                            style={{ width: `${progressPct}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between text-[10px] text-slate-400 font-semibold font-mono">
-                          <span>
-                            Progress: {m.currentValue.toLocaleString()} / {m.targetValue.toLocaleString()}
-                          </span>
-                          <span>{progressPct}%</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Reward & Claim Button */}
-                    <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-                      <div className="text-right">
-                        <span className="text-xs text-slate-400 block font-semibold">REWARD</span>
-                        <span className="text-sm font-black font-['Orbitron'] text-amber-300 flex items-center gap-1 justify-end">
-                          {m.rewardType === 'gems' ? '💎' : '¢'} +{m.rewardAmount.toLocaleString()}{' '}
-                          {m.rewardType.toUpperCase()}
-                        </span>
-                      </div>
-
-                      {m.claimed ? (
-                        <div className="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-400 font-bold font-['Orbitron'] text-xs flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                          <span>CLAIMED</span>
-                        </div>
-                      ) : isClaimable ? (
-                        <button
-                          onClick={() => handleClaimReward(m)}
-                          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-400 hover:to-pink-400 text-white font-black font-['Orbitron'] text-xs tracking-wider shadow-[0_0_15px_rgba(244,63,94,0.5)] active:scale-95 transition-all cursor-pointer animate-pulse"
-                        >
-                          CLAIM REWARD
-                        </button>
-                      ) : (
-                        <div className="px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-slate-500 font-bold font-['Orbitron'] text-xs">
-                          IN PROGRESS
-                        </div>
-                      )}
-                    </div>
+                {/* Info & Progress */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs sm:text-sm font-black text-white font-['Orbitron'] truncate">
+                      {mission.title}
+                    </h4>
+                    <span className="text-xs font-bold font-['Orbitron'] text-amber-300 flex items-center gap-1 shrink-0">
+                      <span>+{mission.rewardAmount}</span>
+                      <span className="text-[11px]">¢</span>
+                    </span>
                   </div>
-                );
-              })}
-            </div>
-          ) : (
-            /* Tab 2: 7-Day Login Streak */
-            <div className="space-y-4">
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
-                <div>
-                  <h4 className="font-bold text-white font-['Orbitron'] text-sm">CURRENT LOGIN STREAK</h4>
-                  <p className="text-xs text-slate-400">Log in every 24 hours to claim ascending coin & gem bonuses!</p>
-                </div>
-                <div className="text-2xl font-black text-rose-400 font-['Orbitron']">
-                  🔥 {profile.loginStreak} DAYS
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-                {DAILY_REWARDS_TABLE.map((r) => {
-                  const isClaimed = profile.claimedDailyRewards.includes(r.day);
-                  const isToday = profile.loginStreak === r.day;
-                  const isAvailable = isToday && !isClaimed;
+                  <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">
+                    {mission.description}
+                  </p>
 
-                  return (
-                    <div
-                      key={r.day}
-                      className={`p-4 rounded-2xl border text-center flex flex-col items-center justify-between gap-3 ${
-                        isAvailable
-                          ? 'bg-rose-950/40 border-rose-400 shadow-[0_0_20px_rgba(244,63,94,0.3)] animate-pulse'
-                          : isClaimed
-                          ? 'bg-slate-900/60 border-slate-800 opacity-60'
-                          : 'bg-slate-900 border-slate-800'
-                      }`}
-                    >
-                      <span className="text-xs font-bold text-slate-400 font-['Orbitron']">
-                        DAY {r.day}
-                      </span>
-
-                      <div className="text-3xl my-1">
-                        {r.day === 7 ? '👑' : r.rewardType === 'gems' ? '💎' : '💰'}
-                      </div>
-
-                      <div>
-                        <span className="text-xs font-black text-amber-300 font-['Orbitron'] block">
-                          +{r.amount.toLocaleString()}
-                        </span>
-                        <span className="text-[10px] text-slate-400 uppercase font-semibold">
-                          {r.rewardType}
-                        </span>
-                      </div>
-
-                      {isClaimed ? (
-                        <div className="text-[10px] font-bold text-emerald-400 flex items-center gap-1 font-['Orbitron']">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> CLAIMED
-                        </div>
-                      ) : isAvailable ? (
-                        <button
-                          onClick={() => handleClaimDay(r.day)}
-                          className="w-full py-1.5 rounded-lg bg-rose-500 hover:bg-rose-400 text-white font-bold font-['Orbitron'] text-[10px] tracking-wider cursor-pointer shadow-md active:scale-95"
-                        >
-                          CLAIM
-                        </button>
-                      ) : (
-                        <span className="text-[10px] font-semibold text-slate-500">
-                          {r.day < profile.loginStreak ? 'EXPIRED' : 'LOCKED'}
-                        </span>
-                      )}
+                  {/* Progress Bar & Numeric Target */}
+                  <div className="mt-2 flex items-center gap-2">
+                    <div className="flex-1 h-2 rounded-full bg-slate-800 border border-slate-700 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          isCompleted
+                            ? 'bg-gradient-to-r from-emerald-400 to-green-500 shadow-[0_0_8px_#10b981]'
+                            : 'bg-gradient-to-r from-cyan-400 to-sky-500'
+                        }`}
+                        style={{ width: `${percent}%` }}
+                      />
                     </div>
-                  );
-                })}
+                    <span className="text-[10px] font-bold font-['Orbitron'] text-slate-400 shrink-0 tabular-nums">
+                      {mission.currentValue.toLocaleString()} / {mission.targetValue.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Claim Button / Status matching reference */}
+                <div className="shrink-0">
+                  {isClaimed ? (
+                    <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-800 text-[11px] font-bold text-slate-400">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      Claimed
+                    </span>
+                  ) : isCompleted ? (
+                    <button
+                      onClick={() => handleClaim(mission)}
+                      className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black font-['Orbitron'] text-xs shadow-[0_0_15px_rgba(16,185,129,0.5)] transition-all cursor-pointer active:scale-95 animate-pulse"
+                    >
+                      Claim
+                    </button>
+                  ) : (
+                    <span className="text-[10px] font-bold font-['Orbitron'] text-slate-500 px-2 py-1 rounded bg-slate-950">
+                      {percent}%
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })}
+        </div>
+
+        {/* 7-Day Login Streak Strip at Bottom */}
+        <div className="pt-2 border-t border-slate-800">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-slate-300 font-['Orbitron'] flex items-center gap-1.5">
+              <Gift className="w-3.5 h-3.5 text-indigo-400" />
+              7-Day Streak Rewards
+            </span>
+            <span className="text-[10px] text-cyan-400 font-bold font-['Orbitron']">
+              Day 3 of 7
+            </span>
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {DAILY_REWARDS_TABLE.map((r) => {
+              const isClaimed = profile.claimedDailyRewards.includes(r.day);
+              const isToday = r.day === 3;
+              return (
+                <div
+                  key={r.day}
+                  onClick={() => {
+                    if (isToday && !isClaimed) {
+                      onClaimDailyReward(r.day);
+                    }
+                  }}
+                  className={`flex flex-col items-center p-1.5 rounded-xl border text-center transition-all ${
+                    isClaimed
+                      ? 'bg-slate-900/40 border-slate-800 text-slate-500 opacity-60'
+                      : isToday
+                      ? 'bg-indigo-500/20 border-indigo-400 text-indigo-300 shadow-[0_0_10px_rgba(99,102,241,0.3)] cursor-pointer animate-pulse'
+                      : 'bg-slate-900 border-slate-800 text-slate-400'
+                  }`}
+                >
+                  <span className="text-[9px] font-bold font-['Orbitron']">D{r.day}</span>
+                  <span className="text-xs mt-0.5">{r.rewardType === 'gems' ? '💎' : '¢'}</span>
+                  <span className="text-[9px] font-black font-['Orbitron'] tabular-nums">{r.amount}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>

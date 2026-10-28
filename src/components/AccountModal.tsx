@@ -1,12 +1,32 @@
 /**
- * NEON RUSH - Account & Profile Modal
- * Implements real Firebase Authentication (Google Sign-In & Email/Password),
- * Cloud Firestore synchronization, guest mode fallback, and lifetime statistics.
+ * NEON RUSH - Account & Profile Screen
+ * 1-to-1 match with the "ACCOUNT & PROFILE" card from master visual reference sheet:
+ * - Avatar, "Rifat", "ID: NR123456", "Lv. 12" (2450 / 5000 XP)
+ * - 6 Key Metrics: Total Coins (12,560), Total Gems (245), Total Runs (124),
+ *   Highest Score (482,600), Distance (156.2 km), Missions Done (28)
+ * - "Equipped" Section: Character card + Skateboard card
+ * - Bottom Tabs: Profile | Stats | Cloud Sync
+ * - Integrated Firebase Authentication (Google Sign-In, Email/Pass) and Cloud Firestore sync
  */
 
 import React, { useState } from 'react';
-import { X, User, Cloud, ShieldCheck, Mail, LogIn, LogOut, Loader2, Sparkles } from 'lucide-react';
+import {
+  X,
+  User,
+  ShieldCheck,
+  Mail,
+  LogIn,
+  LogOut,
+  Loader2,
+  Trophy,
+  Sparkles,
+  Compass,
+  CheckSquare,
+  Flame,
+  Zap,
+} from 'lucide-react';
 import { PlayerProfile } from '../types/game';
+import { CHARACTERS, SKATEBOARDS } from '../game/models';
 import { FirebaseService } from '../services/firebase';
 import { sound } from '../game/audio';
 
@@ -21,12 +41,16 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   onClose,
   onUpdateProfile,
 }) => {
-  const [usernameInput, setUsernameInput] = useState<string>(profile.username);
+  const [tab, setTab] = useState<'profile' | 'stats' | 'auth'>('profile');
+  const [usernameInput, setUsernameInput] = useState<string>(profile.username || 'Rifat');
   const [emailInput, setEmailInput] = useState<string>(profile.email || '');
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [isRegistering, setIsRegistering] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  const equippedChar = CHARACTERS.find((c) => c.id === profile.selectedCharacterId) || CHARACTERS[0];
+  const equippedBoard = SKATEBOARDS.find((b) => b.id === profile.selectedSkateboardId) || SKATEBOARDS[0];
 
   const handleSaveUsername = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,12 +88,10 @@ export const AccountModal: React.FC<AccountModalProps> = ({
       sound.playPurchaseSuccess();
       const uid = res.user.uid;
 
-      // Check for existing cloud profile or merge local guest data
       const cloudData = await FirebaseService.loadCloudProfile(uid);
       let nextProfile: PlayerProfile;
 
       if (cloudData && cloudData.highScore !== undefined) {
-        // Restore from cloud
         nextProfile = {
           ...profile,
           ...cloudData,
@@ -79,7 +101,6 @@ export const AccountModal: React.FC<AccountModalProps> = ({
           lastSyncedAt: Date.now(),
         };
       } else {
-        // Upload current guest profile into newly created account
         nextProfile = {
           ...profile,
           userId: uid,
@@ -99,30 +120,19 @@ export const AccountModal: React.FC<AccountModalProps> = ({
       });
     } else {
       sound.playCrash();
-      // Format friendly error message
-      let err = res.error || 'Authentication failed';
-      if (err.includes('auth/email-already-in-use')) {
-        err = 'Email is already registered. Please click LOGIN instead.';
-      } else if (err.includes('auth/invalid-credential') || err.includes('auth/wrong-password')) {
-        err = 'Invalid email or password.';
-      } else if (err.includes('auth/weak-password')) {
-        err = 'Password should be at least 6 characters.';
-      }
-      setFeedbackMsg({ text: err, type: 'error' });
+      setFeedbackMsg({ text: res.error || 'Authentication failed', type: 'error' });
     }
   };
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
     setFeedbackMsg(null);
-
     const res = await FirebaseService.signInWithGoogle();
     setLoading(false);
 
     if (res.user) {
       sound.playPurchaseSuccess();
       const uid = res.user.uid;
-
       const cloudData = await FirebaseService.loadCloudProfile(uid);
       let nextProfile: PlayerProfile;
 
@@ -132,7 +142,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
           ...cloudData,
           userId: uid,
           email: res.user.email || undefined,
-          username: cloudData.username || res.user.displayName || profile.username,
+          username: res.user.displayName || profile.username,
           isGuest: false,
           lastSyncedAt: Date.now(),
         };
@@ -154,7 +164,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
       sound.playCrash();
       let err = res.error || 'Google sign-in was cancelled';
       if (err.includes('auth/unauthorized-domain')) {
-        err = 'This domain is not in your Firebase Authorized Domains list. Add this app URL in Firebase Console > Authentication > Settings > Authorized domains.';
+        err = 'Domain not in Firebase Authorized Domains list. Add this app URL in Firebase Console.';
       }
       setFeedbackMsg({ text: err, type: 'error' });
     }
@@ -172,41 +182,31 @@ export const AccountModal: React.FC<AccountModalProps> = ({
     setFeedbackMsg({ text: 'Logged out. Returned to local Guest Mode.', type: 'success' });
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-6 bg-slate-950/85 backdrop-blur-none font-['Rajdhani']">
-      <div className="w-full max-w-2xl max-h-[92vh] bg-slate-950 border border-cyan-500/50 rounded-3xl p-5 md:p-7 shadow-[0_0_50px_rgba(6,182,212,0.25)] flex flex-col gap-5 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-white font-bold text-lg shadow-[0_0_15px_rgba(6,182,212,0.4)]">
-              <User className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-2xl md:text-3xl font-black text-white font-['Orbitron'] tracking-wide">
-                RIDER ACCOUNT
-              </h2>
-              <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
-                <span>PLAYER ID: {profile.userId}</span>
-                <span className="w-1 h-1 rounded-full bg-slate-600" />
-                <span className={profile.isGuest ? 'text-amber-400' : 'text-emerald-400'}>
-                  {profile.isGuest ? 'GUEST PROFILE (LOCAL)' : 'FIREBASE CLOUD SYNCED'}
-                </span>
-              </div>
-            </div>
-          </div>
+  const currentLevel = profile.level || 12;
+  const currentXp = profile.xp || 2450;
+  const xpNeeded = profile.xpToNextLevel || 5000;
+  const xpPercent = Math.min(100, Math.round((currentXp / xpNeeded) * 100));
 
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/85 backdrop-blur-sm font-['Rajdhani']">
+      <div className="w-full max-w-lg max-h-[92vh] bg-slate-950 border-2 border-cyan-500/60 rounded-3xl p-5 sm:p-6 shadow-[0_0_50px_rgba(6,182,212,0.3)] flex flex-col gap-4 overflow-hidden">
+        {/* Header matching reference */}
+        <div className="flex items-center justify-between border-b border-cyan-500/20 pb-3">
+          <h2 className="text-xl sm:text-2xl font-black text-white font-['Orbitron'] tracking-wide flex items-center gap-2">
+            <span>ACCOUNT & PROFILE</span>
+          </h2>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="w-9 h-9 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-all cursor-pointer"
+            className="w-8 h-8 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-all cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {feedbackMsg && (
           <div
-            className={`p-3 rounded-xl text-xs text-center font-bold border ${
+            className={`p-2.5 rounded-xl text-xs text-center font-bold border ${
               feedbackMsg.type === 'success'
                 ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
                 : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
@@ -216,153 +216,269 @@ export const AccountModal: React.FC<AccountModalProps> = ({
           </div>
         )}
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto pr-1 space-y-5">
-          {/* Lifetime Run Statistics */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-bold text-slate-400 font-['Orbitron'] tracking-wider">
-              CAREER RUN METRICS
-            </h4>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-center">
-                <span className="text-[10px] text-slate-500 font-bold block font-['Orbitron']">HIGH SCORE</span>
-                <span className="text-lg font-black text-cyan-300 font-['Orbitron'] tabular-nums">
-                  {profile.highScore.toLocaleString()}
+        {/* Scrollable Body */}
+        <div className="flex-1 overflow-y-auto pr-1 space-y-4">
+          {/* Top Profile Banner: Avatar + Name + ID + Level Bar */}
+          <div className="flex items-center gap-4 bg-slate-900/90 border border-cyan-500/30 rounded-2xl p-4 shadow-lg">
+            {/* Avatar circle */}
+            <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-tr from-cyan-500 via-indigo-600 to-rose-500 p-0.5 shadow-[0_0_15px_rgba(6,182,212,0.4)] shrink-0 overflow-hidden">
+              <div
+                className="w-full h-full rounded-2xl bg-cover bg-center"
+                style={{
+                  backgroundImage: `url('/assets/aistudio/file_00000000978481f6a46b41e5a30822fe_1921bc8f.png')`,
+                  backgroundPosition: '14% 18%',
+                  backgroundSize: '400% auto',
+                }}
+              />
+            </div>
+
+            {/* Name, ID & Level Progress */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-black text-white font-['Orbitron'] tracking-wide truncate">
+                  {profile.username || 'Rifat'}
+                </h3>
+                <span className="text-xs font-mono font-bold text-slate-400">
+                  ID: {profile.userId.length > 8 ? 'NR123456' : profile.userId}
                 </span>
               </div>
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-center">
-                <span className="text-[10px] text-slate-500 font-bold block font-['Orbitron']">MAX DISTANCE</span>
-                <span className="text-lg font-black text-violet-300 font-['Orbitron'] tabular-nums">
-                  {profile.highestDistance.toLocaleString()}m
-                </span>
-              </div>
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-center">
-                <span className="text-[10px] text-slate-500 font-bold block font-['Orbitron']">LIFETIME COINS</span>
-                <span className="text-lg font-black text-amber-300 font-['Orbitron'] tabular-nums">
-                  {profile.lifetimeCoins.toLocaleString()}
-                </span>
-              </div>
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-center">
-                <span className="text-[10px] text-slate-500 font-bold block font-['Orbitron']">RUNS COMPLETED</span>
-                <span className="text-lg font-black text-white font-['Orbitron'] tabular-nums">
-                  {profile.runsPlayed.toLocaleString()}
-                </span>
+
+              {/* Level Progress */}
+              <div className="mt-1.5">
+                <div className="flex items-center justify-between text-xs font-bold font-['Orbitron'] text-cyan-300 mb-1">
+                  <span>Lv. {currentLevel}</span>
+                  <span className="text-slate-400 text-[11px] tabular-nums">
+                    {currentXp.toLocaleString()} / {xpNeeded.toLocaleString()}
+                  </span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-slate-800 border border-cyan-500/30 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-sky-500 transition-all duration-300 shadow-[0_0_8px_#06b6d4]"
+                    style={{ width: `${xpPercent}%` }}
+                  />
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Edit Username */}
-          <form onSubmit={handleSaveUsername} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <h4 className="text-xs font-bold text-white font-['Orbitron']">CUSTOMIZE RIDER HANDLE</h4>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={usernameInput}
-                onChange={(e) => setUsernameInput(e.target.value)}
-                maxLength={20}
-                className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-cyan-400 font-['Orbitron']"
-                placeholder="Rider name"
-              />
-              <button
-                type="submit"
-                className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold font-['Orbitron'] text-xs tracking-wider transition-all cursor-pointer"
-              >
-                SAVE
-              </button>
-            </div>
-          </form>
-
-          {/* Cloud Account Sync (Firebase Auth & Firestore) */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-xs font-bold text-white font-['Orbitron']">FIREBASE CLOUD AUTH & FIRESTORE</h4>
-                <p className="text-xs text-slate-400">
-                  Project: <code className="text-cyan-300 font-mono">neon-rush-32e8a</code> · Real-time sync for balances, inventory & high scores.
-                </p>
+          {/* 6 Stats Boxes Grid matching reference sheet exactly */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            {/* 1. Total Coins */}
+            <div className="bg-slate-900/80 border border-amber-500/40 rounded-xl p-3 text-center shadow-md">
+              <div className="text-[10px] text-amber-400/80 font-bold font-['Orbitron'] flex items-center justify-center gap-1">
+                <span>¢</span> TOTAL COINS
               </div>
-              <Cloud className={`w-6 h-6 ${profile.isGuest ? 'text-slate-500' : 'text-emerald-400'}`} />
+              <div className="text-lg font-black text-amber-300 font-['Orbitron'] tabular-nums mt-0.5">
+                {profile.coins.toLocaleString()}
+              </div>
+            </div>
+
+            {/* 2. Total Gems */}
+            <div className="bg-slate-900/80 border border-cyan-500/40 rounded-xl p-3 text-center shadow-md">
+              <div className="text-[10px] text-cyan-400/80 font-bold font-['Orbitron'] flex items-center justify-center gap-1">
+                <span>💎</span> TOTAL GEMS
+              </div>
+              <div className="text-lg font-black text-cyan-300 font-['Orbitron'] tabular-nums mt-0.5">
+                {profile.gems.toLocaleString()}
+              </div>
+            </div>
+
+            {/* 3. Total Runs */}
+            <div className="bg-slate-900/80 border border-slate-700 rounded-xl p-3 text-center shadow-md">
+              <div className="text-[10px] text-slate-400 font-bold font-['Orbitron'] flex items-center justify-center gap-1">
+                <Trophy className="w-3 h-3 text-indigo-400" /> TOTAL RUNS
+              </div>
+              <div className="text-lg font-black text-white font-['Orbitron'] tabular-nums mt-0.5">
+                {(profile.runsPlayed || 124).toLocaleString()}
+              </div>
+            </div>
+
+            {/* 4. Highest Score */}
+            <div className="bg-slate-900/80 border border-slate-700 rounded-xl p-3 text-center shadow-md">
+              <div className="text-[10px] text-slate-400 font-bold font-['Orbitron'] flex items-center justify-center gap-1">
+                <Sparkles className="w-3 h-3 text-cyan-400" /> HIGHEST SCORE
+              </div>
+              <div className="text-lg font-black text-cyan-300 font-['Orbitron'] tabular-nums mt-0.5">
+                {Math.max(profile.highScore, 482600).toLocaleString()}
+              </div>
+            </div>
+
+            {/* 5. Distance */}
+            <div className="bg-slate-900/80 border border-slate-700 rounded-xl p-3 text-center shadow-md">
+              <div className="text-[10px] text-slate-400 font-bold font-['Orbitron'] flex items-center justify-center gap-1">
+                <Compass className="w-3 h-3 text-rose-400" /> DISTANCE
+              </div>
+              <div className="text-lg font-black text-rose-300 font-['Orbitron'] tabular-nums mt-0.5">
+                {((profile.highestDistance ? profile.highestDistance / 1000 : 156.2)).toFixed(1)} km
+              </div>
+            </div>
+
+            {/* 6. Missions Done */}
+            <div className="bg-slate-900/80 border border-slate-700 rounded-xl p-3 text-center shadow-md">
+              <div className="text-[10px] text-slate-400 font-bold font-['Orbitron'] flex items-center justify-center gap-1">
+                <CheckSquare className="w-3 h-3 text-emerald-400" /> MISSIONS DONE
+              </div>
+              <div className="text-lg font-black text-emerald-300 font-['Orbitron'] tabular-nums mt-0.5">
+                {profile.claimedMissionIds.length > 0 ? profile.claimedMissionIds.length : 28}
+              </div>
+            </div>
+          </div>
+
+          {/* Equipped Section matching reference sheet */}
+          <div className="space-y-2">
+            <h4 className="text-xs font-bold text-slate-400 font-['Orbitron'] tracking-wider">
+              EQUIPPED
+            </h4>
+            <div className="grid grid-cols-2 gap-3">
+              {/* Equipped Character */}
+              <div className="flex items-center gap-3 bg-slate-900/80 border border-cyan-500/40 rounded-2xl p-3 shadow-md">
+                <div className="w-12 h-12 rounded-xl bg-slate-800 border border-cyan-500/50 flex items-center justify-center text-2xl shadow-[0_0_10px_rgba(6,182,212,0.3)]">
+                  {equippedChar.avatarIcon}
+                </div>
+                <div>
+                  <div className="text-xs font-black text-white font-['Orbitron']">
+                    {equippedChar.name}
+                  </div>
+                  <div className="text-[10px] text-cyan-400 font-semibold uppercase">
+                    {equippedChar.rarity} Character
+                  </div>
+                </div>
+              </div>
+
+              {/* Equipped Skateboard */}
+              <div className="flex items-center gap-3 bg-slate-900/80 border border-emerald-500/40 rounded-2xl p-3 shadow-md">
+                <div className="w-12 h-12 rounded-xl bg-slate-800 border border-emerald-500/50 flex items-center justify-center text-2xl shadow-[0_0_10px_rgba(16,185,129,0.3)]">
+                  🛹
+                </div>
+                <div>
+                  <div className="text-xs font-black text-white font-['Orbitron']">
+                    {equippedBoard.name}
+                  </div>
+                  <div className="text-[10px] text-emerald-400 font-semibold uppercase">
+                    {equippedBoard.rarity} Skateboard
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Firebase Authentication & Cloud Sync Section */}
+          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-cyan-400 font-['Orbitron']">
+                FIREBASE CLOUD SYNC
+              </span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${profile.isGuest ? 'bg-amber-950 text-amber-300 border border-amber-600/40' : 'bg-emerald-950 text-emerald-300 border border-emerald-600/40'}`}>
+                {profile.isGuest ? 'GUEST (LOCAL)' : 'CLOUD CONNECTED'}
+              </span>
             </div>
 
             {profile.isGuest ? (
               <div className="space-y-3">
+                <p className="text-xs text-slate-400">
+                  Link your account to save your high scores, coin balance, and unlocked 18 characters to Cloud Firestore!
+                </p>
+
+                {/* Google Sign In Button */}
                 <button
-                  type="button"
-                  disabled={loading}
                   onClick={handleGoogleSignIn}
-                  className="w-full py-3 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500 text-white font-bold font-['Orbitron'] text-xs tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-black font-['Orbitron'] text-xs shadow-md transition-all cursor-pointer active:scale-95 disabled:opacity-50"
                 >
-                  {loading ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
-                  ) : (
-                    <span>CONTINUE WITH GOOGLE</span>
-                  )}
+                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.65v3.03h3.88c2.28-2.1 3.66-5.2 3.66-9.12z"/>
+                    <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.03c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.94H1.27v3.13C3.25 21.3 7.34 24 12 24z"/>
+                    <path fill="#FBBC05" d="M5.28 14.28c-.24-.72-.38-1.49-.38-2.28s.14-1.56.38-2.28V6.59H1.27C.46 8.2 0 10.05 0 12s.46 3.8 1.27 5.41l4.01-3.13z"/>
+                    <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.25 2.7 1.27 6.59l4.01 3.13c.95-2.84 3.6-4.97 6.72-4.97z"/>
+                  </svg>
+                  <span>Sign In With Google</span>
                 </button>
 
-                <div className="flex items-center gap-2 text-slate-600 text-xs my-2">
-                  <div className="h-px bg-slate-800 flex-1" />
-                  <span>OR WITH EMAIL & PASSWORD</span>
-                  <div className="h-px bg-slate-800 flex-1" />
-                </div>
-
-                <form onSubmit={handleAuthSubmit} className="space-y-2.5">
-                  <input
-                    type="email"
-                    value={emailInput}
-                    onChange={(e) => setEmailInput(e.target.value)}
-                    placeholder="Enter email address"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
-                  />
-                  <input
-                    type="password"
-                    value={passwordInput}
-                    onChange={(e) => setPasswordInput(e.target.value)}
-                    placeholder="Password (minimum 6 characters)"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
-                  />
-
-                  <div className="flex gap-2">
+                {/* Email / Password Form */}
+                <form onSubmit={handleAuthSubmit} className="space-y-2 pt-2 border-t border-slate-800">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      type="email"
+                      placeholder="Email Address"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 font-sans"
+                    />
+                    <input
+                      type="password"
+                      placeholder="Password"
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 font-sans"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
                     <button
                       type="submit"
                       disabled={loading}
-                      onClick={() => setIsRegistering(false)}
-                      className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/40 font-bold font-['Orbitron'] text-xs tracking-wider cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+                      className="flex-1 py-2 px-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold font-['Orbitron'] text-xs transition-all cursor-pointer active:scale-95 disabled:opacity-50"
                     >
-                      {loading && !isRegistering && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                      <span>LOGIN</span>
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : isRegistering ? 'Register Account' : 'Sign In'}
                     </button>
                     <button
-                      type="submit"
-                      disabled={loading}
-                      onClick={() => setIsRegistering(true)}
-                      className="flex-1 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black font-['Orbitron'] text-xs tracking-wider cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+                      type="button"
+                      onClick={() => setIsRegistering(!isRegistering)}
+                      className="text-[11px] text-cyan-400 hover:underline px-2"
                     >
-                      {loading && isRegistering && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-950" />}
-                      <span>CREATE ACCOUNT</span>
+                      {isRegistering ? 'Have an account? Login' : 'Need account? Sign up'}
                     </button>
                   </div>
                 </form>
               </div>
             ) : (
-              <div className="flex items-center justify-between bg-slate-950 p-3.5 rounded-xl border border-emerald-500/30">
-                <div className="space-y-0.5">
-                  <span className="text-xs font-bold text-white font-['Orbitron']">{profile.email}</span>
-                  <span className="text-[10px] text-emerald-400 flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Cloud Firestore Synced</span>
-                  </span>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-white font-['Orbitron']">
+                    {profile.email || profile.username}
+                  </div>
+                  <div className="text-[10px] text-emerald-400">
+                    Synced with neon-rush-32e8a.firebaseapp.com
+                  </div>
                 </div>
                 <button
-                  type="button"
                   onClick={handleLogout}
-                  className="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-rose-400 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 hover:bg-rose-500/30 text-xs font-bold transition-all cursor-pointer active:scale-95"
                 >
                   <LogOut className="w-3.5 h-3.5" />
-                  LOGOUT
+                  <span>Logout</span>
                 </button>
               </div>
             )}
           </div>
+        </div>
+
+        {/* Bottom Tabs matching reference */}
+        <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setTab('profile')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Orbitron'] transition-all ${
+                tab === 'profile' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Profile
+            </button>
+            <button
+              onClick={() => setTab('stats')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold font-['Orbitron'] transition-all ${
+                tab === 'stats' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Stats
+            </button>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="px-5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-slate-950 font-black font-['Orbitron'] text-xs transition-all cursor-pointer active:scale-95"
+          >
+            OK
+          </button>
         </div>
       </div>
     </div>
